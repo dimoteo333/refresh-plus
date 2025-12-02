@@ -1,0 +1,15 @@
+# Application constants
+
+# Points
+DEFAULT_MAX_POINTS = 100
+POINTS_PER_BOOKING = 10
+POINTS_RECOVERY_AMOUNT = 10
+
+# User Tiers
+TIER_SILVER = "silver"
+TIER_GOLD = "gold"
+TIER_PLATINUM = "platinum"
+
+# Limits
+MAX_WISHLIST_ITEMS = 20
+MAX_BOOKING_GUESTS = 10
