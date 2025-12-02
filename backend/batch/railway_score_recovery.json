@@ -1,0 +1,11 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "NIXPACKS",
+    "buildCommand": "pip install -r ../requirements.txt"
+  },
+  "deploy": {
+    "startCommand": "python -c 'import asyncio; from score_recovery import process_score_recovery; asyncio.run(process_score_recovery())'",
+    "restartPolicyType": "NEVER"
+  }
+}

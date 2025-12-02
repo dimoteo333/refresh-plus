@@ -1,0 +1,56 @@
+from pydantic_settings import BaseSettings
+from typing import List
+
+class Settings(BaseSettings):
+    # 기본 설정
+    ENVIRONMENT: str = "development"
+    DEBUG: bool = False
+    PROJECT_NAME: str = "Refresh Plus"
+
+    # 데이터베이스
+    DATABASE_URL: str = "sqlite+aiosqlite:///./refresh_plus.db"
+
+    # Clerk
+    CLERK_SECRET_KEY: str
+    CLERK_PUBLISHABLE_KEY: str
+
+    # Firebase
+    FIREBASE_CREDENTIALS_PATH: str | None = None
+    FIREBASE_PROJECT_ID: str | None = None
+
+    # Kakao Talk
+    KAKAO_REST_API_KEY: str
+    KAKAO_CHANNEL_ID: str
+
+    # AWS
+    AWS_REGION: str = "ap-northeast-2"
+    AWS_ACCESS_KEY_ID: str | None = None
+    AWS_SECRET_ACCESS_KEY: str | None = None
+
+    # Redis (캐시)
+    REDIS_URL: str | None = None
+
+    # Sentry
+    SENTRY_DSN: str | None = None
+
+    # CORS
+    CORS_ORIGINS: List[str] = [
+        "http://localhost:3000",
+        "http://localhost:8000",
+    ]
+
+    # 애플리케이션 설정
+    MAX_WISHLIST_ITEMS: int = 20
+    POINTS_PER_BOOKING: int = 10
+    POINTS_RECOVERY_HOURS: int = 24
+    MAX_POINTS: int = 100
+
+    # RAG 설정
+    RAG_MODEL: str = "gpt-3.5-turbo"
+    RAG_TEMPERATURE: float = 0.7
+
+    class Config:
+        env_file = ".env"
+        case_sensitive = True
+
+settings = Settings()
