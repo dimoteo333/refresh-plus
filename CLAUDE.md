@@ -36,7 +36,7 @@ python backend/batch/run_daily_ticketing.py
 python backend/batch/run_score_recovery.py
 ```
 
-### Frontend (Next.js 14 + TypeScript)
+### Frontend (Next.js + TypeScript)
 ```bash
 # Setup
 cd frontend

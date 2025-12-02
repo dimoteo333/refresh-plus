@@ -118,7 +118,7 @@ LLM으로 응답 생성
 
 ### Frontend
 ```
-Framework:          Next.js 14+ (App Router, TypeScript)
+Framework:          Next.js (App Router, TypeScript)
 UI Components:      Shadcn/ui (Tailwind CSS)
 State Management:   Context API + React Query
 Authentication:     Clerk
