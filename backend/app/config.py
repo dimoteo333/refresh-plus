@@ -47,8 +47,9 @@ class Settings(BaseSettings):
     MAX_POINTS: int = 100
 
     # RAG 설정
-    RAG_MODEL: str = "gpt-3.5-turbo"
+    RAG_MODEL: str = "gpt-4o-mini"
     RAG_TEMPERATURE: float = 0.7
+    OPENAI_API_KEY: str | None = None
 
     # Lulu-Lala 크롤링 설정
     LULU_LALA_USERNAME: str | None = None
@@ -67,5 +68,6 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"  # 추가 환경 변수 허용
 
 settings = Settings()
