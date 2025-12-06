@@ -17,6 +17,23 @@ export interface Accommodation {
   win_rate?: number;
 }
 
+export interface RandomAccommodation {
+  id: string;
+  name: string;
+  region: string;
+  first_image?: string;
+}
+
+export interface PopularAccommodation {
+  id: string;
+  name: string;
+  region: string;
+  first_image?: string;
+  date: string;
+  applicants: number;
+  score: number;
+}
+
 export interface AccommodationFilters {
   region?: string;
   sort_by?: "popularity" | "price" | "rating";

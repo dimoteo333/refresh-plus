@@ -40,3 +40,26 @@ class AccommodationResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class RandomAccommodationResponse(BaseModel):
+    """랜덤 숙소 조회용 간소화된 스키마"""
+    id: str
+    name: str
+    region: str
+    first_image: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+class PopularAccommodationResponse(BaseModel):
+    """실시간 인기 숙소 조회용 스키마"""
+    id: str
+    name: str
+    region: str
+    first_image: Optional[str] = None
+    date: str
+    applicants: int
+    score: float
+
+    class Config:
+        from_attributes = True

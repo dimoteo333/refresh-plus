@@ -1,10 +1,12 @@
+"use client";
+
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
   Bell,
   Bot,
   Compass,
-  MapPin,
   PlaneTakeoff,
   ShieldCheck,
   Sparkles,
@@ -19,6 +21,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import BottomNav from "@/components/layout/BottomNav";
+import ImageCarousel from "@/components/accommodation/ImageCarousel";
+import PopularAccommodationCarousel from "@/components/accommodation/PopularAccommodationCarousel";
+import { RandomAccommodation, PopularAccommodation } from "@/types/accommodation";
+import { accommodationApi } from "@/lib/api";
 
 const buttonBase =
   "inline-flex items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50";
@@ -51,6 +57,32 @@ const journey = [
 ];
 
 export default function Home() {
+  const [randomAccommodations, setRandomAccommodations] = useState<RandomAccommodation[]>([]);
+  const [popularAccommodations, setPopularAccommodations] = useState<PopularAccommodation[]>([]);
+
+  useEffect(() => {
+    const fetchRandomAccommodations = async () => {
+      try {
+        const response = await accommodationApi.getRandom(5);
+        setRandomAccommodations(response.data);
+      } catch (error) {
+        console.error("Failed to fetch random accommodations:", error);
+      }
+    };
+
+    const fetchPopularAccommodations = async () => {
+      try {
+        const response = await accommodationApi.getPopular(5);
+        setPopularAccommodations(response.data);
+      } catch (error) {
+        console.error("Failed to fetch popular accommodations:", error);
+      }
+    };
+
+    fetchRandomAccommodations();
+    fetchPopularAccommodations();
+  }, []);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-sky-50 via-blue-50/70 to-white text-gray-900">
       <div className="mx-auto flex min-h-screen max-w-5xl flex-col px-4 pb-28 pt-6 sm:px-6 lg:px-8">
@@ -97,14 +129,11 @@ export default function Home() {
               <div className="space-y-5">
                 <div className="flex items-center gap-2">
                   <Badge className="bg-sky-100 text-sky-800">실시간 예약 · 알림</Badge>
-                  <Badge variant="secondary" className="bg-white/80 text-sky-700">
-                    모바일 최적화
-                  </Badge>
                 </div>
                 <h1 className="text-3xl font-bold leading-tight text-slate-900 sm:text-4xl lg:text-5xl">
-                  여행의 설렘을
+                  연성소를 누구보다
                   <br />
-                  <span className="text-sky-600">포인트</span>로 예약하세요
+                  <span className="text-blue-600">빠르게</span> 예약하세요
                 </h1>
                 <p className="text-base leading-relaxed text-slate-700 sm:text-lg">
                   매일 자정 자동 배정, 원하는 숙소의 실시간 현황, 알림까지 한 번에.
@@ -112,52 +141,57 @@ export default function Home() {
                 </p>
                 <div className="flex flex-wrap items-center gap-3">
                   <Link
-                    href="/sign-up"
+                    href="/search"
                     className={`${primaryButtonClasses} h-11 px-5 text-base`}
                   >
-                    시작하기
+                    숙소 둘러보기
                   </Link>
                   <Link
-                    href="/sign-in"
+                    href="/my"
                     className={`${outlineButtonClasses} h-11 px-5 text-base`}
                   >
-                    앱으로 로그인
+                    내 정보
                   </Link>
                   <div className="flex items-center gap-2 text-sm text-sky-800">
                     <Star className="h-4 w-4 fill-sky-500 text-sky-500" />
-                    <span>실시간 알림 · 챗봇 · 포인트 티켓팅</span>
+                    <span>실시간 알림 · 챗봇 · 추천</span>
                   </div>
                 </div>
               </div>
               <div className="relative">
-                <div className="relative mx-auto max-w-[420px] overflow-hidden rounded-3xl border border-sky-100/60 bg-sky-50/80 shadow-xl">
-                  <Image
-                    src="/images/hero-travel.svg"
-                    alt="여행 감성의 숙소 예약"
-                    width={960}
-                    height={640}
-                    className="h-full w-full object-cover"
-                    priority
-                  />
+                <ImageCarousel accommodations={randomAccommodations} />
+              </div>
+            </div>
+          </section>
+
+          {/* 실시간 인기 숙소 섹션 */}
+          <section
+            id="popular-accommodations"
+            className="relative overflow-hidden rounded-3xl border border-sky-100/60 bg-white/80 p-6 shadow-lg backdrop-blur-lg sm:p-8"
+          >
+            <div className="grid gap-8 md:grid-cols-2 md:items-center">
+              <div className="space-y-5">
+                <div className="flex items-center gap-2">
+                  <Badge className="bg-red-100 text-red-800">실시간 인기</Badge>
                 </div>
-                <Card className="absolute -bottom-6 left-6 hidden w-56 rounded-2xl border-sky-100/60 bg-white/90 shadow-lg backdrop-blur-md sm:block">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-lg text-slate-800">오늘의 인기 숙소</CardTitle>
-                  </CardHeader>
-                  <CardContent className="flex items-center gap-3 pt-0">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-sky-50 text-sky-600">
-                      <MapPin className="h-6 w-6" />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold text-slate-900">제주 바다뷰 리조트</p>
-                      <p className="text-xs text-slate-600">평균 당첨 점수 78점</p>
-                      <div className="flex items-center gap-1 text-xs text-sky-700">
-                        <Sparkles className="h-3.5 w-3.5" />
-                        <span>알림 ON</span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                <h2 className="text-3xl font-bold leading-tight text-slate-900 sm:text-4xl">
+                  지금 가장 <span className="text-red-600">핫한</span> 숙소
+                </h2>
+                <p className="text-base leading-relaxed text-slate-700 sm:text-lg">
+                  오늘 신청 가능한 숙소 중 가장 인기있는 숙소들이에요.
+                  실시간 신청 현황과 예측 점수에 대해 확인하세요!
+                </p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Link
+                    href="/search"
+                    className={`${primaryButtonClasses} h-11 px-5 text-base`}
+                  >
+                    전체 숙소 보기
+                  </Link>
+                </div>
+              </div>
+              <div className="relative">
+                <PopularAccommodationCarousel accommodations={popularAccommodations} />
               </div>
             </div>
           </section>
