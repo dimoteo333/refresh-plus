@@ -7,7 +7,7 @@ class UserBase(BaseModel):
     name: str
 
 class UserCreate(UserBase):
-    id: str  # Clerk ID
+    id: str  # 사용자 ID
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None

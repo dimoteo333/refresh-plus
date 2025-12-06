@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { UserButton } from "@clerk/nextjs";
 
 export default function Header() {
   return (
@@ -41,7 +40,9 @@ export default function Header() {
           </div>
 
           <div className="flex items-center gap-4">
-            <UserButton afterSignOutUrl="/" />
+            <div className="text-sm text-gray-700">
+              사용자
+            </div>
           </div>
         </div>
       </div>

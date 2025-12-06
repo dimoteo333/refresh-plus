@@ -82,7 +82,7 @@
 
 | 컬럼명 | 타입 | 제약조건 | 설명 |
 |--------|------|----------|------|
-| `id` | VARCHAR | PRIMARY KEY, INDEX | 사용자id (PK, Clerk ID) |
+| `id` | VARCHAR | PRIMARY KEY, INDEX | 사용자id (PK) |
 | `name` | VARCHAR | | 사용자명 |
 | `points` | INTEGER | DEFAULT 100 | 점수 |
 | `available_nights` | INTEGER | DEFAULT 0 | 사용가능박수 |

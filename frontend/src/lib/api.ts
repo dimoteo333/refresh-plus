@@ -92,3 +92,12 @@ export const notificationApi = {
   updatePreferences: (token: string, data: any) =>
     createApiClient(token).put("/api/notifications/preferences", data),
 };
+
+// 챗봇 API
+export const chatbotApi = {
+  chat: (token: string, query: string) =>
+    createApiClient(token).post("/api/chatbot/chat", { query }),
+
+  getStats: (token: string) =>
+    createApiClient(token).get("/api/chatbot/stats"),
+};

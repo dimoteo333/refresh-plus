@@ -1,30 +1,26 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useAuth } from "@clerk/nextjs";
 import { wishlistApi } from "@/lib/api";
 
+// TODO: 실제 인증 시스템 구현 후 사용자 ID 가져오기
+const getUserId = () => "test-user-id";
+
 export function useWishlist() {
-  const { getToken } = useAuth();
   const queryClient = useQueryClient();
+  const userId = getUserId();
 
   const { data: wishlist = [] } = useQuery({
     queryKey: ["wishlist"],
     queryFn: async () => {
-      const token = await getToken();
-      if (!token) throw new Error("No token");
-
-      const response = await wishlistApi.getAll(token);
+      const response = await wishlistApi.getAll(userId);
       return response.data || [];
     },
   });
 
   const addToWishlistMutation = useMutation({
     mutationFn: async (accommodationId: string) => {
-      const token = await getToken();
-      if (!token) throw new Error("No token");
-
-      const response = await wishlistApi.add(token, accommodationId);
+      const response = await wishlistApi.add(userId, accommodationId);
       return response.data;
     },
     onSuccess: () => {
@@ -34,14 +30,11 @@ export function useWishlist() {
 
   const removeFromWishlistMutation = useMutation({
     mutationFn: async (accommodationId: string) => {
-      const token = await getToken();
-      if (!token) throw new Error("No token");
-
       // Find the wishlist item ID for this accommodation
       const item = wishlist.find((w: any) => w.accommodation_id === accommodationId);
       if (!item) throw new Error("Wishlist item not found");
 
-      const response = await wishlistApi.remove(token, item.id);
+      const response = await wishlistApi.remove(userId, item.id);
       return response.data;
     },
     onSuccess: () => {

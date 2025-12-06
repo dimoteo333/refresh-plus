@@ -1,35 +1,31 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useAuth } from "@clerk/nextjs";
 import { bookingApi } from "@/lib/api";
 import { Booking, BookingCreate } from "@/types/booking";
 
+// TODO: 실제 인증 시스템 구현 후 사용자 ID 가져오기
+const getUserId = () => "test-user-id";
+
 export function useBookings(status?: string) {
-  const { getToken } = useAuth();
+  const userId = getUserId();
 
   return useQuery({
     queryKey: ["bookings", status],
     queryFn: async () => {
-      const token = await getToken();
-      if (!token) throw new Error("No token");
-
-      const response = await bookingApi.getHistory(token, { status });
+      const response = await bookingApi.getHistory(userId, { status });
       return response.data as Booking[];
     },
   });
 }
 
 export function useCreateBooking() {
-  const { getToken } = useAuth();
+  const userId = getUserId();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (bookingData: BookingCreate) => {
-      const token = await getToken();
-      if (!token) throw new Error("No token");
-
-      const response = await bookingApi.create(token, bookingData);
+      const response = await bookingApi.create(userId, bookingData);
       return response.data;
     },
     onSuccess: () => {

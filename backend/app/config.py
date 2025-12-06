@@ -11,10 +11,6 @@ class Settings(BaseSettings):
     # 데이터베이스
     DATABASE_URL: str = "sqlite+aiosqlite:///./refresh_plus.db"
 
-    # Clerk
-    CLERK_SECRET_KEY: str
-    CLERK_PUBLISHABLE_KEY: str
-
     # Firebase
     FIREBASE_CREDENTIALS_PATH: str | None = None
     FIREBASE_PROJECT_ID: str | None = None
