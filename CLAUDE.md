@@ -114,8 +114,8 @@ WON 예약 → COMPLETED (체크아웃 날짜 이후)
 
 ### 인증 흐름
 
-- Frontend: Clerk 인증 → JWT 토큰
-- Backend: `app/dependencies.py::get_current_user()`가 `app/integrations/clerk.py::verify_token()`을 통해 JWT 검증
+- Frontend: 사용자 ID를 HTTP 헤더(`X-User-ID`)로 전송
+- Backend: `app/dependencies.py::get_current_user()`가 헤더에서 사용자 ID를 추출하여 DB 조회
 - 모든 보호된 라우트는 `Depends(get_current_user)` 사용
 
 ### 알림 시스템
@@ -248,7 +248,6 @@ Vercel Project
 ### Backend 필수 변수 (.env 또는 Railway Variables)
 
 - `DATABASE_URL`: PostgreSQL/Turso 연결 문자열
-- `CLERK_SECRET_KEY`: JWT 검증용
 - `FIREBASE_CREDENTIALS_PATH`: 푸시 알림용 (또는 FIREBASE_CREDENTIALS_BASE64 사용)
 - `KAKAO_REST_API_KEY`: 카카오톡 통합용
 - `LULU_LALA_USERNAME`: 크롤링 로그인 사용자명
@@ -260,7 +259,6 @@ Vercel Project
 
 ### Frontend 필수 변수 (.env.local 또는 Vercel Environment)
 
-- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`: Clerk 공개 키
 - `NEXT_PUBLIC_API_URL`: Backend API URL (Railway URL)
 - `NEXT_PUBLIC_FIREBASE_*`: FCM용 Firebase 설정
 
@@ -292,10 +290,6 @@ Cron 작업의 경우, 데이터베이스 연결 및 API 접근을 보장하기 
 ---
 
 ## 중요 통합 포인트
-
-### Clerk 인증
-
-`backend/app/integrations/clerk.py::verify_token()`의 플레이스홀더 구현은 현재 목 사용자 ID를 반환합니다. 프로덕션에서는 실제 Clerk SDK 구현으로 교체하세요.
 
 ### Firebase Admin SDK
 

@@ -156,7 +156,6 @@ LLM으로 맥락화된 응답 생성
 Framework:          Next.js 15 (App Router, TypeScript, React 19)
 UI Components:      Shadcn/ui (Tailwind CSS)
 State Management:   React Query (TanStack Query)
-Authentication:     Clerk
 Push Notifications: Firebase Cloud Messaging
 Kakao Integration:  Kakao Talk Channel API (iOS/PC 알림)
 Forms:              React Hook Form + Zod
@@ -169,7 +168,6 @@ Charts/Analytics:   Recharts
 Framework:          FastAPI (Python 3.11+)
 ORM:                SQLAlchemy 2.0 (async)
 Database:           Turso (SQLite Edge) / PostgreSQL
-Authentication:     Clerk SDK (JWT 검증)
 Notifications:      Firebase Admin SDK
 Kakao Integration:  Kakao Talk Channel API
 Crawling:           Playwright (async)
@@ -230,7 +228,6 @@ backend/
 │   │   └── today_accommodation_realtime.py  # 실시간 현황 갱신
 │   │
 │   ├── integrations/        # 외부 서비스 통합
-│   │   ├── clerk.py         # Clerk 인증
 │   │   ├── firebase_service.py  # FCM 푸시 알림
 │   │   └── kakao_service.py     # 카카오톡 알림
 │   │
@@ -319,10 +316,6 @@ cp .env.example .env
 # 데이터베이스
 DATABASE_URL=sqlite+aiosqlite:///./refresh_plus.db
 
-# Clerk 인증
-CLERK_SECRET_KEY=your_clerk_secret_key
-CLERK_PUBLISHABLE_KEY=your_clerk_publishable_key
-
 # Firebase (푸시 알림)
 FIREBASE_CREDENTIALS_PATH=./firebase-credentials.json
 FIREBASE_PROJECT_ID=your_project_id
@@ -379,9 +372,6 @@ cp .env.local.example .env.local
 
 **필수 환경 변수**:
 ```env
-# Clerk 인증
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your_clerk_publishable_key
-
 # Firebase (FCM)
 NEXT_PUBLIC_FIREBASE_API_KEY=your_api_key
 NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_domain
@@ -420,7 +410,6 @@ railway init
 #### 3. 환경 변수 설정
 Railway 대시보드에서 다음 환경 변수 추가:
 - `DATABASE_URL`
-- `CLERK_SECRET_KEY`
 - `FIREBASE_CREDENTIALS_BASE64` (Base64 인코딩된 Firebase 인증 정보)
 - `KAKAO_REST_API_KEY`
 - `LULU_LALA_USERNAME`
@@ -550,7 +539,6 @@ npm run test:e2e
 | 변수명 | 설명 | 필수 |
 |-------|------|-----|
 | `DATABASE_URL` | 데이터베이스 연결 문자열 | ✅ |
-| `CLERK_SECRET_KEY` | Clerk 인증 비밀 키 | ✅ |
 | `FIREBASE_CREDENTIALS_PATH` | Firebase 인증 파일 경로 | ✅ |
 | `KAKAO_REST_API_KEY` | 카카오 REST API 키 | ✅ |
 | `LULU_LALA_USERNAME` | 크롤링 로그인 사용자명 | ✅ |
@@ -566,7 +554,6 @@ npm run test:e2e
 
 | 변수명 | 설명 | 필수 |
 |-------|------|-----|
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk 공개 키 | ✅ |
 | `NEXT_PUBLIC_API_URL` | Backend API URL | ✅ |
 | `NEXT_PUBLIC_FIREBASE_*` | Firebase 설정 | ✅ |
 

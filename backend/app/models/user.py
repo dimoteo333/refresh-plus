@@ -8,7 +8,7 @@ class User(Base):
     """
     __tablename__ = "users"
 
-    # 사용자id (PK, Clerk ID)
+    # 사용자id (PK)
     id = Column(String, primary_key=True, index=True)
     
     # 사용자명

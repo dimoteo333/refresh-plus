@@ -1,10 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.gzip import GZIPMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from contextlib import asynccontextmanager
-import sentry_sdk
-from sentry_sdk.integrations.fastapi import FastApiIntegration
-from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 
 from app.config import settings
 from app.database import engine, Base
@@ -13,17 +10,24 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-# Sentry 초기화
-if settings.SENTRY_DSN:
-    sentry_sdk.init(
-        dsn=settings.SENTRY_DSN,
-        integrations=[
-            FastApiIntegration(),
-            SqlalchemyIntegration(),
-        ],
-        traces_sample_rate=1.0,
-        environment=settings.ENVIRONMENT
-    )
+# Sentry 초기화 (선택적)
+try:
+    import sentry_sdk
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+
+    if settings.SENTRY_DSN:
+        sentry_sdk.init(
+            dsn=settings.SENTRY_DSN,
+            integrations=[
+                FastApiIntegration(),
+                SqlalchemyIntegration(),
+            ],
+            traces_sample_rate=1.0,
+            environment=settings.ENVIRONMENT
+        )
+except ImportError:
+    logger.warning("Sentry SDK not installed. Skipping Sentry initialization.")
 
 # DB 테이블 생성
 Base.metadata.create_all(bind=engine)
@@ -53,7 +57,7 @@ app.add_middleware(
 )
 
 # Gzip 압축
-app.add_middleware(GZIPMiddleware, minimum_size=1000)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # 헬스 체크
 @app.get("/health")
