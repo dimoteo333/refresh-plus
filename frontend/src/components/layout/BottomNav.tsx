@@ -18,18 +18,23 @@ const navItems = [
   { label: "MY숙소", icon: Hotel, href: "/my" },
 ];
 
-export default function BottomNav() {
+interface BottomNavProps {
+  activeHref?: string;
+}
+
+export default function BottomNav({ activeHref }: BottomNavProps = {}) {
   const pathname = usePathname();
+  const currentActive = activeHref || pathname;
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-50">
       <div className="mx-auto max-w-xl px-3 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-        <div className="relative overflow-hidden rounded-[30px] border border-white/25 bg-white/40 shadow-[0_16px_60px_-30px_rgba(59,130,246,0.65)] backdrop-blur-2xl backdrop-saturate-150">
-          <div className="absolute inset-0 bg-gradient-to-br from-white/60 via-sky-100/45 to-blue-100/40" />
+        <div className="relative overflow-hidden rounded-[30px] border border-white/25 bg-white/15 shadow-[0_16px_60px_-30px_rgba(59,130,246,0.65)] backdrop-blur-2xl backdrop-saturate-150">
+          <div className="absolute inset-0 bg-gradient-to-br from-white/35 via-sky-100/25 to-blue-100/20" />
           <div className="absolute inset-x-6 top-0 h-px bg-white/70 blur-[1px] opacity-80" />
           <div className="relative flex items-center justify-between px-3 py-2">
             {navItems.map((item) => {
-              const isActive = pathname === item.href;
+              const isActive = currentActive === item.href;
               return (
                 <Link
                   key={item.label}

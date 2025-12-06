@@ -486,6 +486,140 @@ async def crawl_accommodations(page: Page) -> List[Dict]:
         return []
 
 
+async def extract_meta_text_candidates(page: Page) -> List[str]:
+    """
+    숙소 제목 주변의 텍스트 블록을 수집하여 지역/타입/정원 등의 메타 정보를 찾는 데 활용
+    """
+    try:
+        raw_blocks = await page.evaluate(
+            """
+            () => {
+                const results = [];
+                const seen = new Set();
+                const pushText = (node) => {
+                    if (!node) { return; }
+                    const text = (node.innerText || '').replace(/\\u00a0/g, ' ').trim();
+                    if (!text) { return; }
+                    const snapshot = text.length > 400 ? text.slice(0, 400) : text;
+                    if (seen.has(snapshot)) { return; }
+                    seen.add(snapshot);
+                    results.push(snapshot);
+                };
+
+                const titleSelectors = [
+                    '.prdSubject',
+                    '.prd_subject',
+                    '.prd-title',
+                    '.prdTitle',
+                    '.prdTit',
+                    '.prd_tit',
+                    '.condo-title',
+                    '.condo_tit',
+                    '.title_area h1',
+                    '.title_area h2',
+                    '.titArea h1',
+                    '.titArea h2'
+                ];
+
+                let titleEl = null;
+                for (const selector of titleSelectors) {
+                    const candidate = document.querySelector(selector);
+                    if (candidate) {
+                        titleEl = candidate;
+                        break;
+                    }
+                }
+
+                if (!titleEl) {
+                    titleEl = document.querySelector('h1, h2, .title, .name');
+                }
+
+                const collectAround = (element, depthLimit = 4) => {
+                    if (!element) { return; }
+                    let next = element.nextElementSibling;
+                    let depth = 0;
+                    while (next && depth < depthLimit) {
+                        pushText(next);
+                        next = next.nextElementSibling;
+                        depth += 1;
+                    }
+                    let prev = element.previousElementSibling;
+                    depth = 0;
+                    while (prev && depth < 2) {
+                        pushText(prev);
+                        prev = prev.previousElementSibling;
+                        depth += 1;
+                    }
+                };
+
+                if (titleEl) {
+                    pushText(titleEl);
+                    collectAround(titleEl, 5);
+                    let parent = titleEl.parentElement;
+                    let level = 0;
+                    while (parent && level < 3) {
+                        pushText(parent);
+                        collectAround(parent, 2);
+                        parent = parent.parentElement;
+                        level += 1;
+                    }
+                }
+
+                const infoSelectors = [
+                    '.prd_info',
+                    '.prd-info',
+                    '.prdDesc',
+                    '.prd_desc',
+                    '.prdMeta',
+                    '.prd_meta',
+                    '.prdSub',
+                    '.prd_sub',
+                    '.prd-sub',
+                    '.prd_info_box',
+                    '.prd-info-box',
+                    '.info_area',
+                    '.info-area',
+                    '.info_box',
+                    '.infoBox',
+                    '.meta_info',
+                    '.room_info',
+                    '.room-info',
+                    '.product_info',
+                    '.product-info',
+                    '.detail_info',
+                    '.detail-info',
+                    '.condo_tit',
+                    '.condo-tit'
+                ];
+
+                for (const selector of infoSelectors) {
+                    document.querySelectorAll(selector).forEach((node) => pushText(node));
+                }
+
+                return results;
+            }
+            """
+        )
+
+        if isinstance(raw_blocks, list):
+            cleaned_blocks: List[str] = []
+            seen_texts = set()
+            for block in raw_blocks:
+                if not isinstance(block, str):
+                    continue
+                text = block.strip()
+                if not text or text in seen_texts:
+                    continue
+                seen_texts.add(text)
+                cleaned_blocks.append(text)
+            return cleaned_blocks
+
+    except Exception as e:
+        logger.debug(f"  Failed to collect meta candidates: {str(e)}")
+
+    return []
+
+
 async def crawl_individual_accommodation(
     page: Page,
     acc_url: str,
@@ -587,6 +721,162 @@ async def crawl_individual_accommodation(
                 if name:
                     logger.debug(f"    Extracted name from title: {name}")
 
+        # 지역/숙소 타입/정원 추출 (숙소 제목 근처 메타 영역 우선)
+        region_value = region if region != "Unknown" else None
+        accommodation_type = None
+        capacity_value = None
+
+        meta_texts = await extract_meta_text_candidates(page)
+        meta_selectors = [
+            ".prdSubject + *",
+            ".prdSubject ~ *",
+            ".prd_info",
+            ".prd-info",
+            ".info_area",
+            ".titArea",
+            ".title_area",
+            ".condo_tit",
+            ".room_info",
+            ".room-info",
+            ".product_info",
+            ".product-info",
+        ]
+        seen_meta_texts = set(meta_texts)
+        for selector in meta_selectors:
+            try:
+                elements = await page.query_selector_all(selector)
+                for elem in elements:
+                    text = await elem.inner_text()
+                    if text:
+                        cleaned_text = text.strip()
+                        if cleaned_text and cleaned_text not in seen_meta_texts:
+                            meta_texts.append(cleaned_text)
+                            seen_meta_texts.add(cleaned_text)
+            except:
+                continue
+
+        # 제목 주변에서 정보를 찾지 못한 경우 페이지 상단부 텍스트 사용
+        if not meta_texts:
+            meta_texts.append("\n".join(page_text.splitlines()[:15]))
+
+        def normalize_lines(texts: List[str]) -> List[str]:
+            lines: List[str] = []
+            for text in texts:
+                for line in text.splitlines():
+                    cleaned = " ".join(line.split())
+                    if cleaned:
+                        lines.append(cleaned)
+            return lines
+
+        meta_lines = normalize_lines(meta_texts)
+
+        # 지역 추출 (시/도 키워드 우선)
+        region_pattern = re.compile(
+            r"(서울|경기|인천|부산|대구|광주|대전|울산|세종|강원|충북|충남|전북|전남|경북|경남|제주)\s*(특별자치도|특별자치시|광역시|특별시|도|시)?"
+        )
+        for line in meta_lines:
+            match = region_pattern.search(line)
+            if match:
+                region_value = f"{match.group(1)}{match.group(2) or ''}"
+                break
+        if not region_value:
+            match = region_pattern.search(page_text)
+            if match:
+                region_value = f"{match.group(1)}{match.group(2) or ''}"
+
+        # 숙소 타입 추출 (타입 키워드가 포함된 짧은 텍스트 선호)
+        type_keywords = [
+            "스위트",
+            "스탠더드",
+            "스탠다드",
+            "디럭스",
+            "더블",
+            "트윈",
+            "온돌",
+            "패밀리",
+            "펜션",
+            "리조트",
+            "독채",
+            "풀빌라",
+            "카라반",
+            "킹",
+            "퀸",
+            "룸",
+            "room",
+            "suite",
+            "double",
+            "twin",
+            "family",
+        ]
+        type_candidates = []
+        for line in meta_lines:
+            lower_line = line.lower()
+            if any(kw.lower() in lower_line for kw in type_keywords):
+                cleaned_line = re.sub(r"\d+\s*[명인]\b", "", line)
+                if region_value:
+                    cleaned_line = cleaned_line.replace(region_value, "")
+                parts = re.split(r"[|/·>-]", cleaned_line)
+                for part in parts:
+                    part_clean = part.strip(" |-./·")
+                    if not part_clean:
+                        continue
+                    if any(kw.lower() in part_clean.lower() for kw in type_keywords):
+                        type_candidates.append(part_clean)
+                        break
+        if type_candidates:
+            accommodation_type = type_candidates[0]
+
+        if not accommodation_type:
+            type_label_patterns = [
+                r"(?:객실유형|객실 유형|객실타입|객실 타입|객실형|룸형|룸 타입|룸타입|객실구분|객실종류|Room\s*Type)\s*[:\-]?\s*([^\n]+)",
+            ]
+            for pattern in type_label_patterns:
+                match = re.search(pattern, page_text, re.IGNORECASE)
+                if match:
+                    candidate = match.group(1).splitlines()[0].strip(" :-/|·")
+                    if candidate:
+                        accommodation_type = candidate
+                        break
+
+        # 정원 추출 (상단 짧은 문구에서 '명/인' 패턴 우선)
+        capacity_patterns = [
+            r"(?:기준|정원|최대|수용)\s*(\d+)\s*(?:명|인)",
+            r"(\d+)\s*(?:명|인)\s*기준",
+            r"^\s*(\d+)\s*(?:명|인)\s*$",
+            r"정원[:\s]*(\d+)",
+            r"(\d+)\s*(?:명|인)\s*이용",
+            r"(\d+)\s*인\s*실",
+        ]
+        for line in meta_lines:
+            if len(line) > 120:
+                continue
+            for pattern in capacity_patterns:
+                cap_match = re.search(pattern, line)
+                if cap_match:
+                    try:
+                        cap_val = int(cap_match.group(1))
+                        if cap_val > 0:
+                            capacity_value = cap_val
+                            break
+                    except:
+                        continue
+            if capacity_value:
+                break
+        if not capacity_value:
+            extended_capacity_patterns = [
+                r"(?:기준|정원|최대|수용)\s*(\d+)\s*(?:명|인)",
+                r"(?:기준인원|기준 인원|정원|최대인원|최대 인원|수용인원|수용 인원|이용인원|이용 인원)\s*[:\-]?\s*(\d+)\s*(?:명|인)?",
+                r"(\d+)\s*(?:명|인)\s*(?:수용|이용)",
+            ]
+            for pattern in extended_capacity_patterns:
+                cap_match = re.search(pattern, page_text)
+                if cap_match:
+                    try:
+                        capacity_value = int(cap_match.group(1))
+                        break
+                    except:
+                        continue
+
         # 주소 추출
         address = None
         address_patterns = [
@@ -631,6 +921,35 @@ async def crawl_individual_accommodation(
                 homepage = match.group(1).strip()
                 logger.debug(f"    Extracted homepage: {homepage}")
                 break
+
+        # 메타 정보 보완 - 주소/라벨 기반 지역 추출 및 텍스트 정리
+        if (not region_value or region_value == "Unknown") and address:
+            match = region_pattern.search(address)
+            if match:
+                region_value = f"{match.group(1)}{match.group(2) or ''}"
+
+        if not region_value or region_value == "Unknown":
+            region_label_pattern = re.compile(
+                r"(?:지역|지역구분|소재지|위치)\s*[:\-]?\s*([가-힣\s]{2,25}?(?:특별자치도|특별자치시|광역시|특별시|자치시|자치도|도|시|군|구))"
+            )
+            label_match = region_label_pattern.search(page_text)
+            if label_match:
+                region_value = label_match.group(1).strip()
+
+        region_value = region_value or region or "Unknown"
+
+        if accommodation_type:
+            cleaned_type = accommodation_type
+            if region_value:
+                cleaned_type = cleaned_type.replace(region_value, "")
+            cleaned_type = re.sub(r"(기준|정원|최대)\s*\d+\s*(?:명|인)", "", cleaned_type)
+            cleaned_type = re.sub(r"\s{2,}", " ", cleaned_type).strip(" |-·/.,")
+            if cleaned_type:
+                accommodation_type = cleaned_type
+
+        logger.info(
+            f"    Meta info - region: {region_value}, type: {accommodation_type}, capacity: {capacity_value or 'Unknown'}"
+        )
 
         # 가격은 존재하지 않음 (점수 순으로 선정되는 방식)
         price = 0
@@ -849,11 +1168,13 @@ async def crawl_individual_accommodation(
             accommodation_data = {
                 "id": acc_id,  # URL에서 추출한 실제 ID
                 "name": name,
+                "accommodation_type": accommodation_type,
                 "address": address,  # 주소
                 "contact": contact,  # 연락처
                 "homepage": homepage,  # 홈페이지
                 "price": price,
-                "region": region,
+                "region": region_value,
+                "capacity": capacity_value,
                 "image_urls": image_urls,  # 이미지 URL 리스트
                 "date_booking_info": date_booking_info
             }
@@ -1105,6 +1426,11 @@ async def save_accommodations_to_db(accommodations: List[Dict]):
                     existing_acc.address = acc_data.get("address")
                     existing_acc.contact = acc_data.get("contact")
                     existing_acc.website = acc_data.get("homepage")
+                    if acc_data.get("accommodation_type"):
+                        existing_acc.accommodation_type = acc_data.get("accommodation_type")
+                    capacity_value = acc_data.get("capacity")
+                    if capacity_value is not None:
+                        existing_acc.capacity = capacity_value
 
                     # 이미지 URL 업데이트 (여러 개)
                     new_image_urls = acc_data.get("image_urls", [])
@@ -1129,7 +1455,8 @@ async def save_accommodations_to_db(accommodations: List[Dict]):
                         contact=acc_data.get("contact"),
                         website=acc_data.get("homepage"),
                         images=acc_data.get("image_urls", []),  # 이미지 URL 리스트
-                        capacity=2,  # 기본값
+                        accommodation_type=acc_data.get("accommodation_type"),
+                        capacity=acc_data.get("capacity") or 2,  # 기본값
                     )
                     db.add(new_acc)
                     saved_accommodations += 1
@@ -1400,4 +1727,3 @@ def handler(event, context):
                 "message": str(e)
             })
         }
-

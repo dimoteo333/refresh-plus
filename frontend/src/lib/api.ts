@@ -3,7 +3,7 @@ import axios, { AxiosInstance, AxiosError } from "axios";
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 // Axios 인스턴스 생성
-const createApiClient = (token?: string): AxiosInstance => {
+const createApiClient = (userId?: string): AxiosInstance => {
   const client = axios.create({
     baseURL: API_BASE_URL,
     headers: {
@@ -11,11 +11,11 @@ const createApiClient = (token?: string): AxiosInstance => {
     },
   });
 
-  // 요청 인터셉터 (토큰 추가)
+  // 요청 인터셉터 (사용자 ID 추가)
   client.interceptors.request.use(
     (config) => {
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+      if (userId) {
+        config.headers["X-User-ID"] = userId;
       }
       return config;
     },
@@ -56,6 +56,14 @@ export const accommodationApi = {
     createApiClient().get("/api/accommodations/popular", {
       params: { limit: limit || 5 },
     }),
+
+  search: (token: string, keyword?: string, limit?: number) =>
+    createApiClient(token).get("/api/accommodations/search", {
+      params: { keyword, limit: limit || 50 },
+    }),
+
+  getDetailPage: (id: string) =>
+    createApiClient().get(`/api/accommodations/detail/${id}`),
 };
 
 // 예약 관련 API
