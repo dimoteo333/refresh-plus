@@ -29,8 +29,9 @@ try:
 except ImportError:
     logger.warning("Sentry SDK not installed. Skipping Sentry initialization.")
 
-# DB 테이블 생성
-Base.metadata.create_all(bind=engine)
+# DB 테이블 생성 (Alembic 사용 시 주석 처리)
+# AsyncEngine은 create_all을 지원하지 않으므로 Alembic migration 사용
+# Base.metadata.create_all(bind=engine)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

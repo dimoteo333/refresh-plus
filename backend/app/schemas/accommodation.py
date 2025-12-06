@@ -63,3 +63,55 @@ class PopularAccommodationResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class SearchAccommodationResponse(BaseModel):
+    """검색용 숙소 조회 스키마"""
+    id: str
+    name: str
+    region: str
+    accommodation_type: Optional[str] = None
+    first_image: Optional[str] = None
+    avg_score: Optional[float] = None
+    is_wishlisted: bool = False
+    notify_enabled: bool = False
+
+    class Config:
+        from_attributes = True
+
+class AvailableDateResponse(BaseModel):
+    """예약 가능 날짜 정보"""
+    date: str
+    score: float
+    applicants: int
+    status: str
+    weekday: int
+
+    class Config:
+        from_attributes = True
+
+class WeekdayAverageResponse(BaseModel):
+    """요일별 평균 점수 정보"""
+    weekday: int
+    weekday_name: str
+    avg_score: float
+    count: int
+
+    class Config:
+        from_attributes = True
+
+class AccommodationDetailResponse(BaseModel):
+    """숙소 상세 페이지용 스키마"""
+    id: str
+    name: str
+    region: str
+    address: Optional[str] = None
+    contact: Optional[str] = None
+    website: Optional[str] = None
+    accommodation_type: Optional[str] = None
+    capacity: int
+    images: List[str] = []
+    available_dates: List[AvailableDateResponse] = []
+    weekday_averages: List[WeekdayAverageResponse] = []
+
+    class Config:
+        from_attributes = True

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { ChevronLeft, ChevronRight, Calendar, Users, TrendingUp, Flame } from "lucide-react";
 import { PopularAccommodation } from "@/types/accommodation";
 import { Badge } from "@/components/ui/badge";
@@ -57,55 +58,61 @@ export default function PopularAccommodationCarousel({
     <div className="relative mx-auto max-w-[420px]">
       {/* 메인 이미지 */}
       <div className="relative overflow-hidden rounded-3xl border border-sky-100/60 bg-sky-50/80 shadow-xl">
-        {currentAccommodation.first_image ? (
-          <div className="relative h-64 w-full sm:h-80">
-            <Image
-              src={currentAccommodation.first_image}
-              alt={currentAccommodation.name}
-              fill
-              className="object-cover"
-              priority
-            />
+        <Link
+          href={`/accommodations/${currentAccommodation.id}`}
+          aria-label={`${currentAccommodation.name} 상세 페이지로 이동`}
+          className="group block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+        >
+          {currentAccommodation.first_image ? (
+            <div className="relative h-64 w-full sm:h-80">
+              <Image
+                src={currentAccommodation.first_image}
+                alt={currentAccommodation.name}
+                fill
+                className="object-cover transition duration-500 group-hover:scale-[1.02]"
+                priority
+              />
 
-            {/* 상위 3개 인기 배지 (좌측 상단) */}
-            {isTopThree && (
-              <div className="absolute left-3 top-3">
-                <Badge className="bg-red-500 text-white hover:bg-red-600 gap-1 px-3 py-1.5">
-                  <Flame className="h-4 w-4" />
-                  인기
-                </Badge>
-              </div>
-            )}
+              {/* 상위 3개 인기 배지 (좌측 상단) */}
+              {isTopThree && (
+                <div className="absolute left-3 top-3">
+                  <Badge className="bg-red-500 text-white hover:bg-red-600 gap-1 px-3 py-1.5">
+                    <Flame className="h-4 w-4" />
+                    인기
+                  </Badge>
+                </div>
+              )}
 
-            {/* 숙소 정보 오버레이 (하단) */}
-            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/50 to-transparent p-4">
-              <h3 className="text-lg font-semibold text-white mb-2">
-                {currentAccommodation.name}
-              </h3>
-              <div className="flex flex-wrap items-center gap-3 text-sm text-white/90">
-                {/* 신청 날짜 */}
-                <div className="flex items-center gap-1">
-                  <Calendar className="h-4 w-4" />
-                  <span>{currentAccommodation.date}</span>
-                </div>
-                {/* 신청 인원 */}
-                <div className="flex items-center gap-1">
-                  <Users className="h-4 w-4" />
-                  <span>{currentAccommodation.applicants}명</span>
-                </div>
-                {/* 점수 */}
-                <div className="flex items-center gap-1">
-                  <TrendingUp className="h-4 w-4" />
-                  <span>{currentAccommodation.score.toFixed(1)}점</span>
+              {/* 숙소 정보 오버레이 (하단) */}
+              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/50 to-transparent p-4">
+                <h3 className="text-lg font-semibold text-white mb-2">
+                  {currentAccommodation.name}
+                </h3>
+                <div className="flex flex-wrap items-center gap-3 text-sm text-white/90">
+                  {/* 신청 날짜 */}
+                  <div className="flex items-center gap-1">
+                    <Calendar className="h-4 w-4" />
+                    <span>{currentAccommodation.date}</span>
+                  </div>
+                  {/* 신청 인원 */}
+                  <div className="flex items-center gap-1">
+                    <Users className="h-4 w-4" />
+                    <span>{currentAccommodation.applicants}명</span>
+                  </div>
+                  {/* 점수 */}
+                  <div className="flex items-center gap-1">
+                    <TrendingUp className="h-4 w-4" />
+                    <span>{currentAccommodation.score.toFixed(1)}점</span>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        ) : (
-          <div className="flex h-64 w-full items-center justify-center bg-sky-50 sm:h-80">
-            <p className="text-slate-600">이미지 없음</p>
-          </div>
-        )}
+          ) : (
+            <div className="flex h-64 w-full items-center justify-center bg-sky-50 sm:h-80">
+              <p className="text-slate-600">이미지 없음</p>
+            </div>
+          )}
+        </Link>
 
         {/* 좌우 화살표 버튼 */}
         {accommodations.length > 1 && (
