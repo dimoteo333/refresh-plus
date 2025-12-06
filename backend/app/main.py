@@ -8,7 +8,7 @@ from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 
 from app.config import settings
 from app.database import engine, Base
-from app.routes import accommodations, bookings, users, wishlist, notifications, scores
+from app.routes import accommodations, bookings, users, wishlist, notifications, scores, chatbot
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -93,6 +93,11 @@ app.include_router(
     scores.router,
     prefix="/api/scores",
     tags=["scores"]
+)
+app.include_router(
+    chatbot.router,
+    prefix="/api/chatbot",
+    tags=["chatbot"]
 )
 
 if __name__ == "__main__":
