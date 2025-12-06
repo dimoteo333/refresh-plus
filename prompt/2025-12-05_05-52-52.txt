@@ -1,0 +1,21 @@
+에이전트 > I've reviewed the codebase and I'm ready to help you explore and design implementation plans for Refresh Plus. I understand this is a READ-ONLY planning session where I can only explore the codebase and design solutions - no file modifications are allowed.
+
+I can see this is an employee accommodation booking platform with:
+- **Backend**: FastAPI + Python with three-layer architecture (Routes → Services → Models)
+- **Frontend**: Next.js + TypeScript with React Query
+- **Key Features**: Point-based lottery system, dual-channel notifications (Firebase/Kakao), batch jobs for daily ticketing
+
+I notice from the git status that there are several untracked crawler-related files and some modifications to configuration files, suggesting there may be active development around accommodation data crawling.
+
+**What would you like me to help you design today?** 
+
+Some examples of what I can explore and plan for:
+- Implementing new features (e.g., user dashboards, notification systems, booking flows)
+- Refactoring existing components
+- Adding new batch jobs or improving existing ones
+- Designing database schema changes
+- Planning integration improvements
+- Architecting new modules or services
+
+Please share your requirements and I'll thoroughly explore the codebase to design a detailed implementation plan!
+

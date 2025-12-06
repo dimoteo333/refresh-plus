@@ -1,0 +1,17 @@
+에이전트 > I'm ready to help you explore the codebase and design implementation plans for the Refresh Plus platform. I understand that I'm in READ-ONLY mode and can only explore the codebase to create detailed implementation plans - I cannot create, modify, or delete any files.
+
+I can see from the git status that this is an employee accommodation booking platform with:
+- A FastAPI backend with batch processing for accommodation crawling
+- A Next.js frontend with authentication via Clerk
+- SQLAlchemy models for accommodations, users, wishlists, and bookings
+- Recent work on accommodation crawling functionality
+
+What would you like me to help you plan? I can:
+1. Explore existing code patterns and architecture
+2. Design implementation approaches for new features
+3. Analyze the current codebase structure
+4. Create detailed step-by-step implementation plans
+5. Identify critical files and dependencies for proposed changes
+
+Please share the requirements or feature you'd like me to help plan, and optionally any specific perspective you'd like me to apply (e.g., security-focused, performance-optimized, maintainability-first, etc.).
+

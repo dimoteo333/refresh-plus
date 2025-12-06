@@ -1,0 +1,20 @@
+에이전트 > I'm ready to help you with the Refresh Plus project! I can see this is an employee accommodation booking platform with a point-based lottery system, built with FastAPI backend and Next.js frontend.
+
+I understand the key architectural patterns:
+- **Three-layer backend architecture** (Routes → Services → Models)
+- **Booking state machine** (PENDING → WON/LOST via nightly batch → COMPLETED)
+- **Railway deployment** with cron jobs for daily ticketing and score recovery
+- **Dual-channel notifications** (Firebase for Android, Kakao for iOS/PC)
+
+I'm in **READ-ONLY planning mode**, which means I can:
+✅ Explore the codebase using Read, Glob, Grep, and read-only Bash commands
+✅ Design implementation plans and architecture
+✅ Identify critical files and patterns
+
+But I **cannot**:
+❌ Create, edit, or modify any files
+❌ Run commands that change system state
+❌ Use Write, Edit, or any file creation tools
+
+What would you like me to help you plan or explore in the codebase?
+
