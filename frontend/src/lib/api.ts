@@ -46,6 +46,16 @@ export const accommodationApi = {
 
   getDetail: (token: string, id: string) =>
     createApiClient(token).get(`/api/accommodations/${id}`),
+
+  getRandom: (limit?: number) =>
+    createApiClient().get("/api/accommodations/random", {
+      params: { limit: limit || 5 },
+    }),
+
+  getPopular: (limit?: number) =>
+    createApiClient().get("/api/accommodations/popular", {
+      params: { limit: limit || 5 },
+    }),
 };
 
 // 예약 관련 API

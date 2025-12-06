@@ -5,7 +5,7 @@ from app.database import get_db
 from app.models.accommodation import Accommodation
 from app.models.user import User
 from app.models.booking import Booking, BookingStatus
-from app.schemas.accommodation import AccommodationResponse
+from app.schemas.accommodation import AccommodationResponse, RandomAccommodationResponse, PopularAccommodationResponse
 from app.dependencies import get_current_user
 from app.services.accommodation_service import AccommodationService
 from typing import List
@@ -83,6 +83,57 @@ async def get_accommodations(
         )
 
     return responses
+
+@router.get("/random", response_model=List[RandomAccommodationResponse])
+async def get_random_accommodations(
+    limit: int = Query(5, ge=1, le=10),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    랜덤 숙소 목록 조회 (인증 불필요)
+    메인 페이지 carousel용
+    - limit: 조회할 숙소 개수 (기본값: 5)
+    """
+
+    accommodations = await service.get_random_accommodations(db, limit)
+
+    return [
+        RandomAccommodationResponse(
+            id=acc.id,
+            name=acc.name,
+            region=acc.region,
+            first_image=acc.images[0] if acc.images and len(acc.images) > 0 else None
+        )
+        for acc in accommodations
+    ]
+
+@router.get("/popular", response_model=List[PopularAccommodationResponse])
+async def get_popular_accommodations(
+    limit: int = Query(5, ge=1, le=10),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    실시간 인기 숙소 목록 조회 (인증 불필요)
+    메인 페이지 인기 숙소 섹션용
+    - limit: 조회할 숙소 개수 (기본값: 5)
+    - status='신청가능'인 숙소만 조회
+    - score 기준 내림차순 정렬
+    """
+
+    results = await service.get_popular_accommodations(db, limit)
+
+    return [
+        PopularAccommodationResponse(
+            id=acc.id,
+            name=acc.name,
+            region=acc.region,
+            first_image=acc.images[0] if acc.images and len(acc.images) > 0 else None,
+            date=today_acc.date,
+            applicants=today_acc.applicants,
+            score=today_acc.score
+        )
+        for today_acc, acc in results
+    ]
 
 @router.get("/{accommodation_id}", response_model=AccommodationResponse)
 async def get_accommodation_detail(
