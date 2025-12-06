@@ -33,6 +33,7 @@ env/
 *.db
 *.sqlite
 *.sqlite3
+*.db-journal
 
 # IDEs
 .vscode/
@@ -56,3 +57,12 @@ htmlcov/
 
 # Alembic
 alembic/versions/*.pyc
+
+# Claude Code
+.claude/
+
+# Development scripts
+check_*.py
+test_*.py
+dump_*.py
+create_tables.py

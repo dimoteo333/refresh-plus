@@ -1,6 +1,0 @@
-사용자 > <command-name>/clear</command-name>
-            <command-message>clear</command-message>
-            <command-args></command-args>
-
-사용자 > <local-command-stdout></local-command-stdout>
-

@@ -37,3 +37,12 @@ coverage/
 # Misc
 *.pyc
 __pycache__/
+
+# Claude Code
+.claude/
+
+# Playwright MCP
+.playwright-mcp/
+
+# Prompt logs
+prompt/
