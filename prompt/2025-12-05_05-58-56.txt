@@ -1,8 +1,0 @@
-사용자 > <command-name>/mcp</command-name>
-            <command-message>mcp</command-message>
-            <command-args></command-args>
-
-사용자 > <local-command-stdout>No MCP servers configured. Please run /doctor if this is unexpected. Otherwise, run `claude mcp` or visit https://code.claude.com/docs/en/mcp to learn more.</local-command-stdout>
-
-사용자 > claude mcp
-
