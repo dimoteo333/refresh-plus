@@ -3,10 +3,28 @@ from sqlalchemy.sql import func
 from app.database import Base
 
 class Wishlist(Base):
+    """
+    사용자별 즐겨찾기 목록
+    """
     __tablename__ = "wishlists"
 
+    # Primary Key
     id = Column(String, primary_key=True, index=True)
+    
+    # 사용자id (FK)
     user_id = Column(String, ForeignKey("users.id"), index=True)
+    
+    # 숙소id (FK)
     accommodation_id = Column(String, ForeignKey("accommodations.id"), index=True)
-    notify_when_bookable = Column(Boolean, default=True)
+    
+    # 등록여부
+    is_active = Column(Boolean, default=True)
+    
+    # 알림여부
+    notify_enabled = Column(Boolean, default=True)
+    
+    # 등록시간
     created_at = Column(DateTime, default=func.now())
+    
+    # 업데이트시간
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())

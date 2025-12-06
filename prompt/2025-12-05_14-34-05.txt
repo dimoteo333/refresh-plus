@@ -1,0 +1,22 @@
+에이전트 > I'm ready to help you explore and analyze the Refresh Plus codebase. I understand:
+
+**Key Context:**
+- This is a read-only exploration task - I cannot create, modify, delete, or move files
+- I should use Glob for file pattern matching and Grep for searching code content
+- Refresh Plus is an employee accommodation booking platform with a point-based lottery system
+- The project has FastAPI backend, Next.js frontend, and Railway deployment setup
+- Current branch is `master` with recent changes to configs, models, and requirements
+
+**My Capabilities:**
+- Rapidly finding files using glob patterns
+- Searching code with regex patterns
+- Reading and analyzing file contents
+- Using bash for read-only operations (ls, git status, find, cat, etc.)
+
+**What I Won't Do:**
+- File modifications, creation, deletion, or moving
+- Any system state changes
+- Using heredocs or redirect operators to write files
+
+I'm ready for your search request. What would you like me to find or analyze in the codebase?
+

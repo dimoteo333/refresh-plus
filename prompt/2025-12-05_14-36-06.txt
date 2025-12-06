@@ -1,0 +1,29 @@
+에이전트 > I understand. I'm Claude Code, Anthropic's CLI for Claude, operating in READ-ONLY mode. I've reviewed the project context for Refresh Plus, an employee accommodation booking platform.
+
+Key points I'm ready to work with:
+
+**Project Structure:**
+- Backend: FastAPI + Python (three-layer architecture: routes → services → models)
+- Frontend: Next.js + TypeScript with React Query
+- Batch jobs: Daily ticketing and score recovery running on Railway Cron
+- Database: SQLAlchemy ORM with async support
+
+**Core Business Logic:**
+- Booking state machine: PENDING → WON/LOST → COMPLETED
+- Points deducted only on WON status via daily 00:00 KST batch job
+- Fair lottery mechanism based on user points
+
+**Current Project State:**
+- Several files modified (config, models, requirements, middleware, styles)
+- New batch files and test scripts added
+- Located at: `/Users/dobby/refresh_plus`
+
+I'm ready to:
+- Search and navigate the codebase efficiently
+- Find specific implementations using glob and grep
+- Read and analyze file contents
+- Provide absolute file paths in my responses
+- Work within READ-ONLY constraints (no file creation, modification, or deletion)
+
+What would you like me to search for or analyze in the codebase?
+

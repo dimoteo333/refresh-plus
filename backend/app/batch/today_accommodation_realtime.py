@@ -1,0 +1,948 @@
+"""
+오늘자 숙소 실시간 정보 갱신 배치 작업
+- today_accommodation_info 테이블을 실시간으로 갱신
+- 최초 실행: 신청가능한 날짜만 크롤링해서 저장
+- 반복 실행: 기존 데이터 실시간 갱신
+"""
+
+import asyncio
+import json
+import re
+from datetime import datetime, date as date_obj
+from typing import List, Dict, Optional, Set, Tuple
+from sqlalchemy import select, func
+from app.database import AsyncSessionLocal
+from app.models.accommodation import Accommodation
+from app.models.today_accommodation import TodayAccommodation
+from app.config import settings
+from app.utils.logger import get_logger
+from playwright.async_api import async_playwright, Browser, Page, BrowserContext
+
+logger = get_logger(__name__)
+
+# 로그인 URL
+LULU_LALA_LOGIN_URL = "https://lulu-lala.zzzmobile.co.kr/login.html"
+# 숙소 조회 URL
+SHB_REFRESH_INTRO_URL = "https://shbrefresh.interparkb2b.co.kr/intro"
+
+
+def encrypt_rsa(plaintext: str, public_key_pem: str) -> str:
+    """
+    RSA 공개키로 텍스트 암호화
+    """
+    try:
+        from Crypto.PublicKey import RSA
+        from Crypto.Cipher import PKCS1_v1_5
+        import base64
+
+        key = RSA.import_key(public_key_pem)
+        cipher = PKCS1_v1_5.new(key)
+        encrypted = cipher.encrypt(plaintext.encode('utf-8'))
+        return base64.b64encode(encrypted).decode('utf-8')
+    except Exception as e:
+        logger.error(f"RSA encryption failed: {str(e)}")
+        raise
+
+
+async def login_to_lulu_lala(
+    page: Page,
+    username: str,
+    password: str,
+    rsa_public_key: str
+) -> bool:
+    """
+    lulu-lala 웹사이트에 로그인
+    """
+    try:
+        logger.info(f"Navigating to login page: {LULU_LALA_LOGIN_URL}")
+        await page.goto(LULU_LALA_LOGIN_URL, wait_until="networkidle")
+        await page.wait_for_timeout(2000)
+
+        # 입력 필드 찾기
+        username_input = page.locator('input#username')
+        password_input = page.locator('input#password')
+
+        logger.info("Filling login form...")
+        await username_input.fill(username)
+        await password_input.fill(password)
+
+        await page.wait_for_timeout(2000)
+
+        try:
+            login_result = await page.evaluate(f"""
+                async () => {{
+                    if (typeof login === 'function') {{
+                        try {{
+                            login('{username}', '{password}');
+                            return {{ success: true, message: 'Login function called' }};
+                        }} catch (e) {{
+                            return {{ success: false, message: e.toString() }};
+                        }}
+                    }} else {{
+                        const loginLink = document.querySelector('a[href*="login("]');
+                        if (loginLink) {{
+                            loginLink.click();
+                            return {{ success: true, message: 'Login link clicked' }};
+                        }}
+                        return {{ success: false, message: 'Login function not found' }};
+                    }}
+                }}
+            """)
+
+            logger.info(f"JavaScript execution result: {login_result}")
+            await page.wait_for_timeout(5000)
+            await page.wait_for_timeout(3000)
+
+            cookies = await page.context.cookies()
+            access_token_cookie = next((c for c in cookies if c['name'] == 'access_token'), None)
+            current_url = page.url
+
+            logger.info(f"Login result URL: {current_url}")
+            logger.info(f"access_token cookie: {'present' if access_token_cookie else 'absent'}")
+
+            if access_token_cookie or 'login' not in current_url.lower():
+                logger.info("Login successful!")
+                return True
+            else:
+                logger.warning("Login status unclear, proceeding anyway")
+                return True
+
+        except Exception as e:
+            logger.error(f"JavaScript login attempt failed: {str(e)}")
+            try:
+                login_link = page.locator('a[href*="login("]')
+                if await login_link.count() > 0:
+                    logger.info("Trying to click login link...")
+                    await login_link.click()
+                    await page.wait_for_timeout(5000)
+                    return True
+            except:
+                pass
+            return False
+
+    except Exception as e:
+        logger.error(f"Login error: {str(e)}", exc_info=True)
+        return False
+
+
+async def navigate_to_reservation_page(page: Page, context: BrowserContext) -> tuple[bool, Page]:
+    """
+    lulu-lala에서 shbrefresh 예약 페이지로 이동
+    """
+    try:
+        async def handle_dialog(dialog):
+            logger.info(f"Dialog detected: {dialog.type} - {dialog.message[:100]}")
+            await dialog.accept()
+
+        page.on("dialog", handle_dialog)
+        context.on("page", lambda new_page: new_page.on("dialog", handle_dialog))
+
+        logger.info("Looking for Refresh (연성소) icon on lulu-lala main page...")
+
+        frames = page.frames
+        refresh_element = None
+        found_in_frame = None
+
+        for frame in [page] + list(frames):
+            try:
+                all_links = await frame.query_selector_all("a, button, [role='button'], [onclick], img")
+
+                for element in all_links:
+                    try:
+                        text = await element.inner_text() if hasattr(element, 'inner_text') else ""
+                        href = await element.get_attribute("href") or ""
+                        title = await element.get_attribute("title") or ""
+                        alt = await element.get_attribute("alt") or ""
+                        src = await element.get_attribute("src") or ""
+
+                        combined_text = f"{text} {href} {title} {alt} {src}".lower()
+
+                        if "sh_gmidas" in combined_text or ("shbrefresh" in combined_text and "vservice" in combined_text):
+                            logger.info(f"Found shbrefresh link: {href[:200]}")
+                            refresh_element = element
+                            found_in_frame = frame
+                            break
+                    except:
+                        continue
+
+                if refresh_element:
+                    break
+            except:
+                continue
+
+        if not refresh_element:
+            logger.error("Refresh (연성소) icon not found")
+            return False, page
+
+        logger.info("Clicking Refresh (연성소) icon...")
+
+        pages_before = len(context.pages)
+        shbrefresh_page = None
+
+        def handle_new_page(new_page):
+            nonlocal shbrefresh_page
+            url = new_page.url
+            if "shbrefresh" in url.lower() or "interparkb2b" in url.lower():
+                if "error" not in url.lower() and "login" not in url.lower():
+                    logger.info(f"shbrefresh page detected: {url}")
+                    shbrefresh_page = new_page
+
+        context.on("page", handle_new_page)
+
+        if found_in_frame and found_in_frame != page:
+            try:
+                await refresh_element.click(timeout=5000)
+            except:
+                await refresh_element.evaluate("el => el.click()")
+        else:
+            await refresh_element.scroll_into_view_if_needed()
+            await refresh_element.click()
+
+        max_wait = 30
+        waited = 0
+
+        while waited < max_wait:
+            await page.wait_for_timeout(1000)
+            waited += 1
+
+            if shbrefresh_page:
+                await shbrefresh_page.wait_for_load_state("networkidle", timeout=10000)
+                await shbrefresh_page.wait_for_timeout(2000)
+                page = shbrefresh_page
+                logger.info(f"Switched to shbrefresh page: {page.url}")
+                break
+
+            current_url = page.url
+            if "shbrefresh" in current_url.lower() or "interparkb2b" in current_url.lower():
+                if "error" not in current_url.lower() and "login" not in current_url.lower():
+                    logger.info(f"Reached shbrefresh page: {current_url}")
+                    break
+
+            if len(context.pages) > pages_before:
+                for p in context.pages:
+                    try:
+                        p_url = p.url
+                        if "shbrefresh" in p_url.lower() or "interparkb2b" in p_url.lower():
+                            if "error" not in p_url.lower() and "login" not in p_url.lower():
+                                await p.wait_for_load_state("networkidle", timeout=10000)
+                                page = p
+                                logger.info(f"Switched to new shbrefresh tab: {page.url}")
+                                break
+                    except:
+                        continue
+
+            if waited % 5 == 0:
+                logger.debug(f"Waiting for shbrefresh page... ({waited}/{max_wait}s)")
+
+        logger.info("Looking for RESERVATION button on shbrefresh page...")
+        await page.wait_for_timeout(2000)
+
+        reservation_element = None
+        frames = page.frames
+        search_pages = [page] + list(frames)
+
+        for search_page in search_pages:
+            try:
+                elements = await search_page.query_selector_all(
+                    "button, a, [role='button'], [onclick], [class*='btn'], [class*='button'], [class*='menu']"
+                )
+
+                for element in elements:
+                    try:
+                        text = await element.inner_text() if hasattr(element, 'inner_text') else ""
+                        if not text:
+                            text = await element.text_content() if hasattr(element, 'text_content') else ""
+
+                        class_name = await element.get_attribute("class") or ""
+                        combined = f"{text} {class_name}".upper()
+
+                        if "RESERVATION" in combined:
+                            logger.info(f"Found RESERVATION element: {text[:50]}")
+                            reservation_element = element
+                            break
+                    except:
+                        continue
+
+                if reservation_element:
+                    break
+            except:
+                continue
+
+        if not reservation_element:
+            logger.warning("RESERVATION button not found, trying to proceed anyway...")
+            return True, page
+
+        logger.info("Clicking RESERVATION button...")
+        try:
+            await reservation_element.click()
+        except:
+            await reservation_element.evaluate("el => el.click()")
+
+        await page.wait_for_timeout(3000)
+
+        logger.info(f"Successfully navigated to reservation page: {page.url}")
+        return True, page
+
+    except Exception as e:
+        logger.error(f"Error navigating to reservation page: {str(e)}", exc_info=True)
+        return False, page
+
+
+async def check_if_today_accommodation_empty() -> bool:
+    """
+    today_accommodation_info 테이블이 비어있는지 확인
+    """
+    async with AsyncSessionLocal() as db:
+        try:
+            result = await db.execute(
+                select(func.count(TodayAccommodation.id))
+            )
+            count = result.scalar()
+            is_empty = count == 0
+            logger.info(f"TodayAccommodation table {'is empty' if is_empty else f'has {count} records'}")
+            return is_empty
+        except Exception as e:
+            logger.error(f"Error checking TodayAccommodation table: {str(e)}")
+            return True
+
+
+async def get_all_accommodation_ids() -> List[str]:
+    """
+    모든 숙소 ID 가져오기
+    """
+    async with AsyncSessionLocal() as db:
+        try:
+            result = await db.execute(select(Accommodation.id))
+            ids = [row[0] for row in result.fetchall()]
+            logger.info(f"Found {len(ids)} accommodations in database")
+            return ids
+        except Exception as e:
+            logger.error(f"Error fetching accommodation IDs: {str(e)}")
+            return []
+
+
+async def get_existing_today_accommodations() -> List[Tuple[str, str]]:
+    """
+    기존 TodayAccommodation 레코드의 (accommodation_id, date) 쌍 가져오기
+    """
+    async with AsyncSessionLocal() as db:
+        try:
+            result = await db.execute(
+                select(TodayAccommodation.accommodation_id, TodayAccommodation.date)
+            )
+            records = [(row[0], row[1]) for row in result.fetchall()]
+            logger.info(f"Found {len(records)} existing TodayAccommodation records")
+            return records
+        except Exception as e:
+            logger.error(f"Error fetching existing TodayAccommodation records: {str(e)}")
+            return []
+
+
+async def crawl_bookable_dates_for_accommodation(
+    page: Page,
+    accommodation_id: str
+) -> List[Dict]:
+    """
+    특정 숙소의 신청가능한 날짜 크롤링
+
+    Returns:
+        List[Dict]: 날짜별 정보 리스트
+        [
+            {
+                "date": "YYYY-MM-DD",
+                "status": "신청가능",
+                "score": float,
+                "applicants": int
+            }
+        ]
+    """
+    try:
+        acc_url = f"https://shbrefresh.interparkb2b.co.kr/condo/{accommodation_id}"
+        logger.info(f"Crawling bookable dates for accommodation {accommodation_id}: {acc_url}")
+
+        await page.goto(acc_url, wait_until="networkidle", timeout=30000)
+        await page.wait_for_timeout(2000)
+
+        bookable_dates = []
+
+        logger.info(f"  Extracting bookable dates from calendar...")
+
+        # calendar 클래스 또는 data-role="roomInfo" 요소 찾기
+        room_info_elements = await page.query_selector_all('[data-role="roomInfo"]')
+
+        if not room_info_elements:
+            # 대안: calendar 클래스 내부에서 찾기
+            calendars = await page.query_selector_all('.calendar, [class*="calendar"]')
+            for calendar in calendars:
+                room_info_elements.extend(await calendar.query_selector_all('[data-role="roomInfo"]'))
+
+        logger.info(f"  Found {len(room_info_elements)} room info elements")
+
+        for room_info in room_info_elements:
+            try:
+                # data-rblockdate 속성에서 날짜 추출
+                date_str = await room_info.get_attribute("data-rblockdate")
+                if not date_str:
+                    continue
+
+                # room_status 요소 찾기
+                room_status_element = await room_info.query_selector(".room_status, [class*='room_status']")
+                if not room_status_element:
+                    room_status_element = room_info
+
+                room_status_html = await room_status_element.inner_html()
+                room_status_text = await room_status_element.inner_text()
+
+                # 상태 확인 - 신청가능한 날짜만 추출
+                status = "Unknown"
+                is_bookable = False
+
+                if "신청중" in room_status_text or "신청 중" in room_status_text or "신청가능" in room_status_text:
+                    status = "신청중"
+                    is_bookable = True
+                elif "최초" in room_status_text and "실" in room_status_text:
+                    status = "신청가능(최초 객실오픈)"
+                    is_bookable = True
+                elif "마감" not in room_status_text and "신청불가" not in room_status_text and "객실없음" not in room_status_text:
+                    # 명시적으로 불가능하지 않으면 신청 가능으로 간주
+                    if re.search(r'\d+\.?\d*\s*점', room_status_text) or re.search(r'\d+\s*명', room_status_text):
+                        status = "신청가능(상시 신청중)"
+                        is_bookable = True
+
+                if not is_bookable:
+                    continue
+
+                # 최초 점수와 상시 점수를 data 속성에서 직접 추출 (가장 정확)
+                choi_score = 0.0  # 최초 점수
+                sangsi_score = 0.0  # 상시 점수
+
+                # data-first-room-score 속성에서 최초 점수 추출
+                first_score_attr = await room_info.get_attribute("data-first-room-score")
+                if first_score_attr and first_score_attr.strip():
+                    try:
+                        choi_score = float(first_score_attr)
+                    except:
+                        pass
+
+                # data-permanent-room-score 속성에서 상시 점수 추출
+                permanent_score_attr = await room_info.get_attribute("data-permanent-room-score")
+                if permanent_score_attr and permanent_score_attr.strip():
+                    try:
+                        sangsi_score = float(permanent_score_attr)
+                    except:
+                        pass
+
+                # data 속성에서 추출 실패 시, HTML에서 파싱 시도 (fallback)
+                if choi_score == 0.0 and sangsi_score == 0.0:
+                    # <span>최초</span> 다음의 점수 추출
+                    choi_match = re.search(r'<span[^>]*>최초</span>\s*\d+\s*실\s*-\s*(\d+\.?\d*)\s*점', room_status_html)
+                    if choi_match:
+                        choi_score = float(choi_match.group(1))
+
+                    # <span>상시</span> 다음의 점수 추출
+                    sangsi_match = re.search(r'<span[^>]*>상시</span>\s*\d+\s*실\s*-\s*(\d+\.?\d*)\s*점', room_status_html)
+                    if sangsi_match:
+                        sangsi_score = float(sangsi_match.group(1))
+
+                    # <span>예상점수</span> 추출 (최초/상시가 없는 경우)
+                    if choi_score == 0.0 and sangsi_score == 0.0:
+                        expected_match = re.search(r'<span[^>]*>예상점수</span>\s*(\d+\.?\d*)', room_status_html)
+                        if expected_match:
+                            sangsi_score = float(expected_match.group(1))
+
+                # 두 점수 중 더 높은 점수 선택
+                score = max(choi_score, sangsi_score)
+
+                # 인원 추출 (data 속성 우선, 없으면 HTML 파싱)
+                applicants = 0
+                apply_count_attr = await room_info.get_attribute("data-apply-count")
+                if apply_count_attr and apply_count_attr.strip():
+                    try:
+                        applicants = int(apply_count_attr)
+                    except:
+                        pass
+
+                # data 속성에서 추출 실패 시 HTML 파싱
+                if applicants == 0:
+                    applicants_patterns = [
+                        r'<span[^>]*>신청인원</span>\s*(\d+)',
+                        r'신청인원[\s:]*(\d+)',
+                        r'(\d+)\s*명',
+                    ]
+
+                for pattern in applicants_patterns:
+                    match = re.search(pattern, room_status_text)
+                    if match:
+                        applicants = int(match.group(1))
+                        break
+
+                bookable_dates.append({
+                    "date": date_str,
+                    "status": status,
+                    "score": score,
+                    "applicants": applicants
+                })
+
+                logger.info(f"    Found bookable date: {date_str} - {status}, {score}점 (최초: {choi_score}, 상시: {sangsi_score}), {applicants}명")
+
+            except Exception as e:
+                logger.debug(f"Error parsing room info: {str(e)}")
+                continue
+
+        logger.info(f"  Found {len(bookable_dates)} bookable dates for accommodation {accommodation_id}")
+        return bookable_dates
+
+    except Exception as e:
+        logger.warning(f"Error crawling bookable dates for {accommodation_id}: {str(e)}")
+        return []
+
+
+async def crawl_realtime_info_for_date(
+    page: Page,
+    accommodation_id: str,
+    target_date: str
+) -> Optional[Dict]:
+    """
+    특정 숙소의 특정 날짜에 대한 실시간 정보 크롤링
+
+    Returns:
+        Dict: {
+            "date": "YYYY-MM-DD",
+            "status": str,
+            "score": float,
+            "applicants": int
+        }
+    """
+    try:
+        acc_url = f"https://shbrefresh.interparkb2b.co.kr/condo/{accommodation_id}"
+        logger.info(f"Crawling realtime info for {accommodation_id} on {target_date}")
+
+        await page.goto(acc_url, wait_until="networkidle", timeout=30000)
+        await page.wait_for_timeout(2000)
+
+        logger.info(f"  Looking for date {target_date} using data-rblockdate attribute...")
+
+        # calendar 클래스 또는 data-role="roomInfo" 요소 찾기
+        room_info_elements = await page.query_selector_all('[data-role="roomInfo"]')
+
+        if not room_info_elements:
+            # 대안: calendar 클래스 내부에서 찾기
+            calendars = await page.query_selector_all('.calendar, [class*="calendar"]')
+            for calendar in calendars:
+                room_info_elements.extend(await calendar.query_selector_all('[data-role="roomInfo"]'))
+
+        logger.info(f"  Found {len(room_info_elements)} room info elements")
+
+        for room_info in room_info_elements:
+            try:
+                # data-rblockdate 속성에서 날짜 추출
+                date_str = await room_info.get_attribute("data-rblockdate")
+                if not date_str or date_str != target_date:
+                    continue
+
+                # 타겟 날짜 발견!
+                logger.info(f"    Found target date {target_date}")
+
+                # room_status 요소 찾기
+                room_status_element = await room_info.query_selector(".room_status, [class*='room_status']")
+                if not room_status_element:
+                    room_status_element = room_info
+
+                room_status_html = await room_status_element.inner_html()
+                room_status_text = await room_status_element.inner_text()
+
+                # 상태 추출
+                status = "Unknown"
+                if "신청중" in room_status_text or "신청 중" in room_status_text or "신청가능" in room_status_text:
+                    status = "신청중"
+                elif "최초" in room_status_text and "실" in room_status_text:
+                    status = "신청가능(최초 객실오픈)"
+                elif "마감" in room_status_text or "신청종료" in room_status_text:
+                    status = "마감(신청종료)"
+                elif "신청불가" in room_status_text:
+                    status = "신청불가(오픈전)"
+                elif "객실없음" in room_status_text:
+                    status = "객실없음"
+
+                # 최초 점수와 상시 점수를 data 속성에서 직접 추출 (가장 정확)
+                choi_score = 0.0  # 최초 점수
+                sangsi_score = 0.0  # 상시 점수
+
+                # data-first-room-score 속성에서 최초 점수 추출
+                first_score_attr = await room_info.get_attribute("data-first-room-score")
+                if first_score_attr and first_score_attr.strip():
+                    try:
+                        choi_score = float(first_score_attr)
+                    except:
+                        pass
+
+                # data-permanent-room-score 속성에서 상시 점수 추출
+                permanent_score_attr = await room_info.get_attribute("data-permanent-room-score")
+                if permanent_score_attr and permanent_score_attr.strip():
+                    try:
+                        sangsi_score = float(permanent_score_attr)
+                    except:
+                        pass
+
+                # data 속성에서 추출 실패 시, HTML에서 파싱 시도 (fallback)
+                if choi_score == 0.0 and sangsi_score == 0.0:
+                    # <span>최초</span> 다음의 점수 추출
+                    choi_match = re.search(r'<span[^>]*>최초</span>\s*\d+\s*실\s*-\s*(\d+\.?\d*)\s*점', room_status_html)
+                    if choi_match:
+                        choi_score = float(choi_match.group(1))
+
+                    # <span>상시</span> 다음의 점수 추출
+                    sangsi_match = re.search(r'<span[^>]*>상시</span>\s*\d+\s*실\s*-\s*(\d+\.?\d*)\s*점', room_status_html)
+                    if sangsi_match:
+                        sangsi_score = float(sangsi_match.group(1))
+
+                    # <span>예상점수</span> 추출 (최초/상시가 없는 경우)
+                    if choi_score == 0.0 and sangsi_score == 0.0:
+                        expected_match = re.search(r'<span[^>]*>예상점수</span>\s*(\d+\.?\d*)', room_status_html)
+                        if expected_match:
+                            sangsi_score = float(expected_match.group(1))
+
+                # 두 점수 중 더 높은 점수 선택
+                score = max(choi_score, sangsi_score)
+
+                # 인원 추출 (data 속성 우선, 없으면 HTML 파싱)
+                applicants = 0
+                apply_count_attr = await room_info.get_attribute("data-apply-count")
+                if apply_count_attr and apply_count_attr.strip():
+                    try:
+                        applicants = int(apply_count_attr)
+                    except:
+                        pass
+
+                # data 속성에서 추출 실패 시 HTML 파싱
+                if applicants == 0:
+                    applicants_patterns = [
+                        r'<span[^>]*>신청인원</span>\s*(\d+)',
+                        r'신청인원[\s:]*(\d+)',
+                        r'(\d+)\s*명',
+                    ]
+
+                    for pattern in applicants_patterns:
+                        match = re.search(pattern, room_status_text)
+                        if match:
+                            applicants = int(match.group(1))
+                            break
+
+                logger.info(f"    ✓ {target_date}: {status}, {score}점 (최초: {choi_score}, 상시: {sangsi_score}), {applicants}명")
+
+                return {
+                    "date": target_date,
+                    "status": status,
+                    "score": score,
+                    "applicants": applicants
+                }
+
+            except Exception as e:
+                logger.debug(f"Error processing room info: {str(e)}")
+                continue
+
+        logger.warning(f"  Could not find realtime info for {accommodation_id} on {target_date}")
+        return None
+
+    except Exception as e:
+        logger.warning(f"Error crawling realtime info for {accommodation_id} on {target_date}: {str(e)}")
+        return None
+
+
+async def save_today_accommodations_to_db(
+    accommodation_id: str,
+    dates_info: List[Dict]
+):
+    """
+    오늘자 숙소 정보를 DB에 저장/업데이트
+    """
+    async with AsyncSessionLocal() as db:
+        try:
+            saved = 0
+            updated = 0
+
+            for date_info in dates_info:
+                date_str = date_info["date"]
+
+                # 날짜 파싱
+                date_parts = date_str.split("-")
+                year = int(date_parts[0])
+                month = int(date_parts[1])
+                day = int(date_parts[2])
+
+                # 날짜 객체 생성
+                try:
+                    date_value = date_obj(year, month, day)
+                    weekday = date_value.weekday()
+                    week_number = date_value.isocalendar()[1]
+                except ValueError:
+                    logger.warning(f"Invalid date: {date_str}")
+                    continue
+
+                # TodayAccommodation ID 생성
+                today_id = f"today_{accommodation_id}_{date_str}"
+
+                # 기존 레코드 확인
+                existing = await db.execute(
+                    select(TodayAccommodation).where(TodayAccommodation.id == today_id)
+                )
+                existing_obj = existing.scalar_one_or_none()
+
+                if existing_obj:
+                    # 업데이트
+                    existing_obj.applicants = date_info.get("applicants", 0)
+                    existing_obj.score = date_info.get("score", 0.0)
+                    existing_obj.status = date_info.get("status", "Unknown")
+                    existing_obj.updated_at = datetime.utcnow()
+                    db.add(existing_obj)
+                    updated += 1
+                else:
+                    # 새로 생성
+                    new_today = TodayAccommodation(
+                        id=today_id,
+                        year=year,
+                        month=month,
+                        day=day,
+                        weekday=weekday,
+                        week_number=week_number,
+                        date=date_str,
+                        accommodation_id=accommodation_id,
+                        applicants=date_info.get("applicants", 0),
+                        score=date_info.get("score", 0.0),
+                        status=date_info.get("status", "Unknown")
+                    )
+                    db.add(new_today)
+                    saved += 1
+
+            await db.commit()
+            logger.info(f"  DB save - Saved: {saved}, Updated: {updated}")
+
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Error saving to database: {str(e)}")
+            raise
+
+
+async def process_today_accommodation_realtime(
+    username: Optional[str] = None,
+    password: Optional[str] = None
+) -> Dict:
+    """
+    오늘자 숙소 실시간 정보 갱신 메인 함수
+    """
+    # 설정에서 로드
+    if username is None:
+        username = settings.LULU_LALA_USERNAME
+    if password is None:
+        password = settings.LULU_LALA_PASSWORD
+
+    if not username or not password:
+        error_msg = (
+            "로그인 정보가 설정되지 않았습니다. "
+            ".env 파일에 LULU_LALA_USERNAME과 LULU_LALA_PASSWORD를 설정하세요."
+        )
+        logger.error(error_msg)
+        return {
+            "status": "error",
+            "message": error_msg,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    rsa_public_key = settings.LULU_LALA_RSA_PUBLIC_KEY
+    if not rsa_public_key:
+        error_msg = (
+            "RSA 공개키가 설정되지 않았습니다. "
+            ".env 파일에 LULU_LALA_RSA_PUBLIC_KEY를 설정하세요."
+        )
+        logger.error(error_msg)
+        return {
+            "status": "error",
+            "message": error_msg,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    async with async_playwright() as p:
+        browser: Browser = None
+        context: BrowserContext = None
+        page: Page = None
+
+        try:
+            logger.info("=" * 60)
+            logger.info("Starting today accommodation realtime update batch job...")
+            logger.info("=" * 60)
+
+            # DB 상태 확인
+            is_empty = await check_if_today_accommodation_empty()
+
+            # 브라우저 시작
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(
+                viewport={"width": 1920, "height": 1080},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            )
+            page = await context.new_page()
+
+            # 로그인
+            logger.info("=" * 60)
+            logger.info("STEP 1: Logging in to lulu-lala...")
+            logger.info("=" * 60)
+            login_success = await login_to_lulu_lala(page, username, password, rsa_public_key)
+            if not login_success:
+                return {
+                    "status": "error",
+                    "message": "Login failed",
+                    "step": "login",
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+
+            logger.info("✓ Login successful")
+
+            # Reservation 페이지로 이동
+            logger.info("=" * 60)
+            logger.info("STEP 2: Navigating to reservation page...")
+            logger.info("=" * 60)
+            nav_success, page = await navigate_to_reservation_page(page, context)
+            if not nav_success:
+                return {
+                    "status": "error",
+                    "message": "Failed to navigate to reservation page",
+                    "step": "navigation",
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+
+            logger.info(f"✓ Successfully navigated to: {page.url}")
+
+            # 처리할 숙소/날짜 결정
+            total_processed = 0
+            total_saved = 0
+            total_updated = 0
+
+            if is_empty:
+                # 최초 실행: 모든 숙소의 신청가능 날짜 크롤링
+                logger.info("=" * 60)
+                logger.info("STEP 3: Initial crawl - Finding bookable dates for all accommodations")
+                logger.info("=" * 60)
+
+                accommodation_ids = await get_all_accommodation_ids()
+
+                if not accommodation_ids:
+                    logger.warning("No accommodations found in database")
+                    return {
+                        "status": "warning",
+                        "message": "No accommodations found",
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+
+                logger.info(f"Processing {len(accommodation_ids)} accommodations...")
+
+                for idx, acc_id in enumerate(accommodation_ids, 1):
+                    logger.info(f"[{idx}/{len(accommodation_ids)}] Processing accommodation {acc_id}")
+
+                    try:
+                        bookable_dates = await crawl_bookable_dates_for_accommodation(page, acc_id)
+
+                        if bookable_dates:
+                            await save_today_accommodations_to_db(acc_id, bookable_dates)
+                            total_processed += 1
+                            total_saved += len(bookable_dates)
+
+                        # 과부하 방지를 위한 짧은 대기
+                        await page.wait_for_timeout(1000)
+
+                    except Exception as e:
+                        logger.warning(f"Error processing accommodation {acc_id}: {str(e)}")
+                        continue
+
+                logger.info(f"Initial crawl completed: {total_processed} accommodations, {total_saved} dates")
+
+            else:
+                # 반복 실행: 기존 데이터 업데이트
+                logger.info("=" * 60)
+                logger.info("STEP 3: Update crawl - Refreshing existing records")
+                logger.info("=" * 60)
+
+                existing_records = await get_existing_today_accommodations()
+
+                if not existing_records:
+                    logger.warning("No existing records to update")
+                    return {
+                        "status": "warning",
+                        "message": "No existing records to update",
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+
+                logger.info(f"Updating {len(existing_records)} existing records...")
+
+                # accommodation_id별로 그룹화
+                from collections import defaultdict
+                acc_dates_map = defaultdict(list)
+                for acc_id, date_str in existing_records:
+                    acc_dates_map[acc_id].append(date_str)
+
+                for idx, (acc_id, dates) in enumerate(acc_dates_map.items(), 1):
+                    logger.info(f"[{idx}/{len(acc_dates_map)}] Updating accommodation {acc_id} ({len(dates)} dates)")
+
+                    try:
+                        updated_dates = []
+
+                        for date_str in dates:
+                            date_info = await crawl_realtime_info_for_date(page, acc_id, date_str)
+                            if date_info:
+                                updated_dates.append(date_info)
+
+                        if updated_dates:
+                            await save_today_accommodations_to_db(acc_id, updated_dates)
+                            total_processed += 1
+                            total_updated += len(updated_dates)
+
+                        # 과부하 방지
+                        await page.wait_for_timeout(1000)
+
+                    except Exception as e:
+                        logger.warning(f"Error updating accommodation {acc_id}: {str(e)}")
+                        continue
+
+                logger.info(f"Update crawl completed: {total_processed} accommodations, {total_updated} dates")
+
+            return {
+                "status": "success",
+                "mode": "initial" if is_empty else "update",
+                "accommodations_processed": total_processed,
+                "dates_saved": total_saved,
+                "dates_updated": total_updated,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+
+        except Exception as e:
+            logger.error(f"Batch job failed: {str(e)}", exc_info=True)
+            return {
+                "status": "error",
+                "message": str(e),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        finally:
+            if page:
+                await page.close()
+            if context:
+                await context.close()
+            if browser:
+                await browser.close()
+
+
+def handler(event, context):
+    """AWS Lambda 핸들러"""
+    try:
+        result = asyncio.run(process_today_accommodation_realtime())
+        return {
+            "statusCode": 200,
+            "body": json.dumps(result)
+        }
+    except Exception as e:
+        logger.error(f"Lambda handler error: {str(e)}")
+        return {
+            "statusCode": 500,
+            "body": json.dumps({
+                "status": "error",
+                "message": str(e)
+            })
+        }

@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 from typing import List
+from pydantic import field_validator
 
 class Settings(BaseSettings):
     # 기본 설정
@@ -48,6 +49,20 @@ class Settings(BaseSettings):
     # RAG 설정
     RAG_MODEL: str = "gpt-3.5-turbo"
     RAG_TEMPERATURE: float = 0.7
+
+    # Lulu-Lala 크롤링 설정
+    LULU_LALA_USERNAME: str | None = None
+    LULU_LALA_PASSWORD: str | None = None
+    LULU_LALA_RSA_PUBLIC_KEY: str | None = None
+
+    @field_validator('LULU_LALA_RSA_PUBLIC_KEY', mode='before')
+    @classmethod
+    def normalize_rsa_key(cls, v):
+        """RSA 공개키의 \n을 실제 줄바꿈으로 변환"""
+        if v and isinstance(v, str):
+            # \n을 실제 줄바꿈으로 변환
+            return v.replace('\\n', '\n')
+        return v
 
     class Config:
         env_file = ".env"

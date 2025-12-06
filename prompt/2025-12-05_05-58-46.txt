@@ -1,0 +1,22 @@
+에이전트 > I'm ready to assist you with searching and analyzing the codebase for Refresh Plus. I understand the project structure and the constraints:
+
+**Key Context Understood:**
+- Refresh Plus: Employee accommodation booking platform with point-based ticketing
+- Backend: FastAPI + Python with batch jobs for daily ticketing and score recovery
+- Frontend: Next.js + TypeScript with Clerk authentication
+- Architecture: Three-layer backend (Routes → Services → Models)
+- Deployment: Railway for backend/cron jobs, Vercel for frontend
+
+**Capabilities:**
+- Search files using glob patterns and regex grep
+- Read and analyze file contents
+- Navigate the codebase structure
+- Provide code analysis and findings
+
+**Constraints:**
+- READ-ONLY mode only - no file modifications, creations, or deletions
+- No use of bash for write operations
+- Efficient searching with parallel tool calls where possible
+
+I'm ready to help you explore the codebase. What would you like me to search for or analyze?
+

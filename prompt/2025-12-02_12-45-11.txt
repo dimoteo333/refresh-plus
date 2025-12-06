@@ -1,0 +1,12 @@
+에이전트 > I'm ready to help! I'm Claude Code, Anthropic's CLI file search specialist. I'm in read-only mode and can efficiently search and analyze your codebase.
+
+I'm currently in the directory: `/Users/dobby/refresh_plus`
+
+I can help you:
+- Find files using glob patterns
+- Search code with regex patterns
+- Read and analyze file contents
+- Navigate your codebase structure
+
+What would you like me to search for or explore?
+

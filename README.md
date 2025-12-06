@@ -1,8 +1,8 @@
-# 🏨 Refresh Plus - 임직원 복지 숙소 예약 플랫폼
+# 🏨 Refresh Plus - 신한은행 임직원 숙소 예약 플랫폼
 
-**임직원들을 위한 스마트한 호텔/리조트 예약 시스템**
+**임직원들을 위한 스마트한 연성소(호텔/펜션/리조트) 예약 시스템**
 
-포인트 기반 티켓팅, 실시간 알림, AI 챗봇을 통합한 하이브리드 모바일 앱
+포인트 기반 티켓팅, 실시간 알림, AI 챗봇을 통합한 웹/모바일 플랫폼
 
 ---
 
@@ -13,42 +13,88 @@
 - [기술 스택](#기술-스택)
 - [프로젝트 구조](#프로젝트-구조)
 - [설치 및 실행](#설치-및-실행)
-- [API 엔드포인트](#api-엔드포인트)
 - [배포 가이드](#배포-가이드)
-- [기여 가이드](#기여-가이드)
+- [개발 가이드](#개발-가이드)
 
 ---
 
 ## 프로젝트 개요
 
 ### 🎯 배경
-기존의 임직원용 호텔/리조트 예약 웹사이트의 불편함을 개선하여, 다음을 제공합니다:
 
-- **포인트 기반 예약 시스템**: 임직원들은 일정 점수를 보유하며, 예약할 때마다 차감되고 일정 시간이 경과하면 회복
-- **공정한 티켓팅**: 매일 각 숙소별로 티켓팅을 진행하여 점수가 높은 사람이 예약됨
-- **스마트 알림**: 개인화된 알림으로 예약 기회를 놓치지 않음
-- **AI 챗봇**: 기존 Q&A 게시판 기반 RAG 챗봇으로 즉시 답변
+기존 신한은행 임직원용 연성소(호텔/펜션/리조트) 예약 시스템의 불편함을 개선하여, 다음을 제공합니다:
 
+- **공정한 티켓팅 시스템**: 포인트 기반으로 매일 자정(00:00 KST) 배치 작업을 통해 최고 점수자에게 자동 배정
+- **자동화된 크롤링**: 기존 웹사이트에서 숙소 정보, FAQ, 실시간 신청 현황 자동 수집
+- **실시간 알림**: 개인화된 푸시 알림으로 예약 기회를 놓치지 않음
+- **AI 챗봇**: FAQ 기반 RAG 챗봇으로 즉시 답변
+- **모던 UI/UX**: Next.js 15 + React 19 기반 반응형 웹 인터페이스
+
+### 🌟 핵심 비즈니스 로직
+
+```
+사용자 예약 신청 → PENDING 상태
+           ↓
+매일 00:00 (KST) 배치 작업 실행
+           ↓
+PENDING 예약을 점수 순으로 정렬
+           ↓
+최고 점수자 → WON (당첨)
+기타 신청자 → LOST (탈락)
+           ↓
+WON 상태일 때만 포인트 차감
+```
 
 ---
 
 ## 주요 기능
 
-### 1. 숙소 정보 & 예약 가능성 확인
+### 1. 자동화된 숙소 정보 크롤링
+
 ```
-사용자가 볼 수 있는 정보:
-- 숙소 상세 정보 (이미지, 설명, 편의시설)
-- 현재 본인의 점수로 예약 가능 여부
-- 최근 4주간 평균 당첨에 필요한 점수
-- 과거 승률 및 통계
+기존 웹사이트 (lulu-lala.zzzmobile.co.kr)
+           ↓
+Playwright 기반 크롤러
+           ↓
+✓ 숙소 기본 정보 (이름, 주소, 연락처, 이미지)
+✓ 날짜별 신청 점수 및 인원
+✓ 실시간 신청 현황
+           ↓
+DB 저장 (Accommodations, AccommodationDates, TodayAccommodations)
 ```
 
-**구현 방식**:
-- 매일 밤 12:00 배치 작업으로 당일 통계 계산
-- 실시간 사용자 점수 조회
-- 필터링 & 정렬 (인기도, 지역, 가격대)
+**크롤링 배치 작업**:
+- `accommodation_crawler.py`: 전체 숙소 정보 수집 (일 1회)
+- `faq_crawler.py`: FAQ 정보 수집 (일 1회 또는 필요 시)
+- `today_accommodation_realtime.py`: 오늘자 실시간 신청 현황 갱신 (시간당 1회)
 
-### 2. 실시간 알림 기능
+### 2. 공정한 티켓팅 시스템
+
+```
+[예약 신청 흐름]
+사용자가 숙소 예약 신청
+    ↓
+PENDING 상태로 DB 저장
+    ↓
+사용자의 현재 점수를 winning_score_at_time에 저장
+    ↓
+매일 00:00 (KST) daily_ticketing 배치 작업 실행
+    ↓
+각 숙소/날짜별로 PENDING 예약을 winning_score_at_time 순으로 정렬
+    ↓
+최고 점수 1명 → WON (포인트 차감)
+나머지 → LOST (포인트 그대로)
+    ↓
+WON 사용자에게 푸시 알림 발송
+```
+
+**특징**:
+- 선착순이 아닌 점수 기반 공정 배정
+- 포인트는 WON 상태일 때만 차감 (PENDING/LOST는 차감 안됨)
+- 배치 작업 시점의 점수가 아닌 신청 시점의 점수(`winning_score_at_time`)로 비교
+
+### 3. 실시간 알림 기능
+
 ```
 플랫폼별 알림 전달:
 ┌─────────────────────────────────────┐
@@ -58,7 +104,7 @@
     ┌─────────┼─────────┐
     │         │         │
     ▼         ▼         ▼
- Android   iOS & PC   기타
+ Android   iOS & PC
     │         │
     ▼         ▼
 Firebase  Kakao
@@ -66,51 +112,40 @@ Firebase  Kakao
 ```
 
 **알림 타입**:
-1. **즉시 알림**: 티켓팅 결과, 예약 성공/실패
-2. **관심 숙소 알림**: 찜한 숙소가 내 점수로 예약 가능할 때
-3. **점수 회복 알림**: 일정 시간 경과 후 점수 회복됨
-4. **인기 숙소 알림**: 인기 숙소 남은 자리 공지
+1. **예약 결과 알림**: 티켓팅 결과 (WON/LOST)
+2. **찜한 숙소 알림**: 관심 숙소가 내 점수로 예약 가능할 때
+3. **포인트 회복 알림**: 일정 시간 경과 후 포인트 회복
+4. **인기 숙소 알림**: 경쟁률 높은 숙소 남은 자리 공지
 
-### 3. RAG 챗봇 (Chainlit)
+### 4. FAQ 기반 RAG 챗봇
+
 ```
 사용자 질문
     │
     ▼
-문서 검색 (임직원 Q&A 게시판)
+FAQ 데이터베이스 검색
     │
     ▼
-관련 문서 추출
+관련 FAQ 추출
     │
     ▼
-LLM으로 응답 생성
+LLM으로 맥락화된 응답 생성
     │
     ▼
 사용자에게 표시
 ```
 
 **기능**:
-- Q&A 게시판 데이터 기반 RAG
+- 크롤링한 FAQ 데이터 기반 RAG
 - 예약 정책, 점수 시스템, 취소/변경 정보 자동 응답
 - 웹사이트 하단에 Chainlit 위젯으로 제공
 
-### 4. 찜하기 & 스마트 알림
-```
-사용자 찜하기
-    │
-    ▼
-내 점수로 예약 가능해짐
-    │
-    ▼
-푸시 알림 즉시 발송
-    │
-    ▼
-사용자가 예약 페이지로 이동
-```
+### 5. 찜하기 & 스마트 알림
 
-**특징**:
-- 최대 10개 숙소 찜하기 가능
+- 최대 20개 숙소 찜하기 가능
+- 찜한 숙소가 내 점수로 예약 가능해지면 푸시 알림
 - 주말/휴일 자동 필터링
-- 신청 점수 변동시 추가 알림 옵션
+- 신청 점수 변동 시 추가 알림 옵션
 
 ---
 
@@ -118,26 +153,27 @@ LLM으로 응답 생성
 
 ### Frontend
 ```
-Framework:          Next.js (App Router, TypeScript)
+Framework:          Next.js 15 (App Router, TypeScript, React 19)
 UI Components:      Shadcn/ui (Tailwind CSS)
-State Management:   Context API + React Query
+State Management:   React Query (TanStack Query)
 Authentication:     Clerk
 Push Notifications: Firebase Cloud Messaging
-Push (iOS/PC):      Kakao Talk Channel API
+Kakao Integration:  Kakao Talk Channel API (iOS/PC 알림)
 Forms:              React Hook Form + Zod
-HTTP Client:        Axios / Fetch API
-Charts/Analytics:   Chart.js / Recharts
+HTTP Client:        Axios
+Charts/Analytics:   Recharts
 ```
 
 ### Backend
 ```
 Framework:          FastAPI (Python 3.11+)
-ORM:                SQLAlchemy 2.0
-Database:           Turso (SQLite Edge)
-Task Queue:         AWS Lambda + EventBridge
+ORM:                SQLAlchemy 2.0 (async)
+Database:           Turso (SQLite Edge) / PostgreSQL
 Authentication:     Clerk SDK (JWT 검증)
 Notifications:      Firebase Admin SDK
 Kakao Integration:  Kakao Talk Channel API
+Crawling:           Playwright (async)
+Task Queue:         Railway Cron Jobs
 RAG Chatbot:        Chainlit + LangChain
 Vector DB:          Supabase pgvector (선택)
 ```
@@ -145,13 +181,12 @@ Vector DB:          Supabase pgvector (선택)
 ### Infrastructure
 ```
 Frontend Hosting:   Vercel
-Backend Hosting:    Vercel Functions / AWS Lambda
-Database:           Turso (SQLite)
-File Storage:       AWS S3 / Vercel Blob
-Cache:              Redis (Upstash)
+Backend Hosting:    Railway
+Database:           Turso (SQLite) / Railway PostgreSQL
+File Storage:       Vercel Blob
 Monitoring:         Sentry
-Logging:            CloudWatch / Axiom
-CI/CD:              GitHub Actions
+Logging:            Railway Logs
+CI/CD:              GitHub Actions + Vercel + Railway
 ```
 
 ---
@@ -161,46 +196,82 @@ CI/CD:              GitHub Actions
 ### 고수준 구조
 ```
 refresh-plus/
-├── frontend/          # Next.js + React (TypeScript)
+├── frontend/          # Next.js 15 + React 19 (TypeScript)
 ├── backend/           # FastAPI + Python
-├── infra/             # AWS/Vercel 설정
 └── docs/              # 문서
+```
+
+### Backend 구조
+```
+backend/
+├── app/
+│   ├── main.py              # FastAPI 앱 초기화
+│   ├── config.py            # 환경 설정
+│   ├── database.py          # DB 연결 (async)
+│   ├── dependencies.py      # 의존성 주입 (JWT 인증 등)
+│   │
+│   ├── models/              # SQLAlchemy ORM 모델
+│   │   ├── user.py
+│   │   ├── accommodation.py
+│   │   ├── accommodation_date.py
+│   │   ├── today_accommodation.py
+│   │   ├── booking.py
+│   │   ├── wishlist.py
+│   │   └── faq.py
+│   │
+│   ├── schemas/             # Pydantic 스키마 (요청/응답 검증)
+│   ├── routes/              # API 엔드포인트
+│   ├── services/            # 비즈니스 로직
+│   │
+│   ├── batch/               # 배치 작업 (Railway Cron)
+│   │   ├── daily_ticketing.py               # 매일 00:00 티켓팅
+│   │   ├── accommodation_crawler.py         # 숙소 정보 크롤링
+│   │   ├── faq_crawler.py                   # FAQ 크롤링
+│   │   └── today_accommodation_realtime.py  # 실시간 현황 갱신
+│   │
+│   ├── integrations/        # 외부 서비스 통합
+│   │   ├── clerk.py         # Clerk 인증
+│   │   ├── firebase_service.py  # FCM 푸시 알림
+│   │   └── kakao_service.py     # 카카오톡 알림
+│   │
+│   └── utils/               # 헬퍼 함수
+│       └── logger.py
+│
+└── batch/                   # Railway Cron 실행 스크립트
+    ├── run_daily_ticketing.py
+    ├── run_accommodation_crawler.py
+    ├── run_faq_crawler.py
+    └── run_today_accommodation_realtime.py
 ```
 
 ### Frontend 구조
 ```
 frontend/src/
-├── app/              # Next.js App Router
+├── app/              # Next.js 15 App Router
 │   ├── (auth)/       # 인증 라우트
 │   ├── (protected)/  # 보호된 라우트
-│   └── api/          # API 라우트 (웹훅, 대리 요청)
+│   │   ├── accommodations/
+│   │   ├── bookings/
+│   │   └── wishlist/
+│   └── api/          # API 라우트 (웹훅)
+│
 ├── components/       # React 컴포넌트
-│   ├── layout/       # 레이아웃 컴포넌트
-│   ├── accommodation/# 숙소 관련 컴포넌트
-│   ├── booking/      # 예약 관련 컴포넌트
+│   ├── layout/
+│   ├── accommodation/
+│   ├── booking/
 │   └── ui/           # Shadcn/ui 컴포넌트
+│
 ├── lib/              # 유틸리티 함수
 │   ├── api.ts        # API 클라이언트
 │   ├── firebase.ts   # Firebase 설정
-│   └── notifications.ts
+│   └── utils.ts
+│
 ├── hooks/            # 커스텀 React 훅
-├── context/          # Context API
+│   ├── useAccommodations.ts
+│   ├── useBookings.ts
+│   └── useWishlist.ts
+│
 └── types/            # TypeScript 타입
-```
-
-### Backend 구조
-```
-backend/app/
-├── main.py           # FastAPI 앱 초기화
-├── config.py         # 설정 (환경 변수)
-├── database.py       # DB 연결
-├── models/           # SQLAlchemy 모델
-├── schemas/          # Pydantic 스키마
-├── routes/           # API 라우터
-├── services/         # 비즈니스 로직
-├── batch/            # AWS Lambda 배치
-├── integrations/     # 외부 서비스 통합
-└── utils/            # 헬퍼 함수
 ```
 
 ---
@@ -210,8 +281,8 @@ backend/app/
 ### 필수 요구사항
 - Node.js 18+
 - Python 3.11+
-- Docker (선택사항)
 - Git
+- Railway CLI (배포용)
 
 ### Backend 설치
 
@@ -240,7 +311,39 @@ pip install -r requirements.txt
 #### 4. 환경 변수 설정
 ```bash
 cp .env.example .env
-# .env 파일 편집하여 필요한 값 입력
+# .env 파일 편집
+```
+
+**필수 환경 변수**:
+```env
+# 데이터베이스
+DATABASE_URL=sqlite+aiosqlite:///./refresh_plus.db
+
+# Clerk 인증
+CLERK_SECRET_KEY=your_clerk_secret_key
+CLERK_PUBLISHABLE_KEY=your_clerk_publishable_key
+
+# Firebase (푸시 알림)
+FIREBASE_CREDENTIALS_PATH=./firebase-credentials.json
+FIREBASE_PROJECT_ID=your_project_id
+
+# Kakao Talk
+KAKAO_REST_API_KEY=your_kakao_api_key
+KAKAO_CHANNEL_ID=your_channel_id
+
+# 크롤링 (lulu-lala 로그인 정보)
+LULU_LALA_USERNAME=your_username
+LULU_LALA_PASSWORD=your_password
+LULU_LALA_RSA_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
+
+# CORS
+CORS_ORIGINS=["http://localhost:3000"]
+
+# 앱 설정
+MAX_WISHLIST_ITEMS=20
+POINTS_PER_BOOKING=10
+POINTS_RECOVERY_HOURS=24
+MAX_POINTS=100
 ```
 
 #### 5. 데이터베이스 마이그레이션
@@ -253,483 +356,171 @@ alembic upgrade head
 # 개발 모드
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
-# 프로덕션
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+# API 문서: http://localhost:8000/docs
 ```
 
 ### Frontend 설치
 
-#### 1. 저장소 클론 (위에서 했으면 생략)
+#### 1. 프론트엔드 디렉토리로 이동
 ```bash
-cd refresh-plus/frontend
+cd ../frontend
 ```
 
 #### 2. 의존성 설치
 ```bash
 npm install
-# 또는
-yarn install
 ```
 
 #### 3. 환경 변수 설정
 ```bash
 cp .env.local.example .env.local
-# .env.local 파일 편집하여 필요한 값 입력
+# .env.local 파일 편집
 ```
 
-필수 환경 변수:
+**필수 환경 변수**:
 ```env
 # Clerk 인증
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your_key
-CLERK_SECRET_KEY=your_secret
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your_clerk_publishable_key
 
-# Firebase
-NEXT_PUBLIC_FIREBASE_API_KEY=your_key
+# Firebase (FCM)
+NEXT_PUBLIC_FIREBASE_API_KEY=your_api_key
 NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_domain
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_id
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_bucket
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id
 
-# API
+# Backend API
 NEXT_PUBLIC_API_URL=http://localhost:8000
-
-# Kakao
-NEXT_PUBLIC_KAKAO_APP_ID=your_id
 ```
 
 #### 4. 개발 서버 실행
 ```bash
 npm run dev
-# 또는
-yarn dev
+# 브라우저: http://localhost:3000
 ```
-
-브라우저에서 `http://localhost:3000` 접속
-
-### Docker 환경에서 실행
-
-#### 전체 스택 시작
-```bash
-docker-compose up -d
-```
-
-서비스:
-- **Frontend**: http://localhost:3000
-- **Backend**: http://localhost:8000
-- **Docs**: http://localhost:8000/docs
-
-#### 특정 서비스만 시작
-```bash
-docker-compose up -d backend
-docker-compose up -d frontend
-```
-
----
-
-## API 엔드포인트
-
-### 숙소 API
-
-#### 전체 숙소 조회
-```http
-GET /api/accommodations?filter=available&sort=popularity
-
-Query Parameters:
-  - filter: available | all | bookable
-  - sort: popularity | price | rating
-  - region: 지역 코드
-  - page: 페이지 번호 (기본값: 1)
-  - limit: 페이지당 개수 (기본값: 20)
-
-Response:
-{
-  "total": 150,
-  "page": 1,
-  "items": [
-    {
-      "id": "acc_123",
-      "name": "샬레 펜션",
-      "region": "강원",
-      "price": 120000,
-      "image_url": "...",
-      "can_book_with_current_score": true,
-      "avg_winning_score_4weeks": 85,
-      "availability": 3,
-      "rating": 4.8
-    }
-  ]
-}
-```
-
-#### 숙소 상세 조회
-```http
-GET /api/accommodations/{accommodation_id}
-
-Response:
-{
-  "id": "acc_123",
-  "name": "샬레 펜션",
-  "description": "...",
-  "images": ["..."],
-  "amenities": ["WiFi", "주방", "..."],
-  "price": 120000,
-  "capacity": 4,
-  "bookings_4weeks": [
-    {"date": "2024-12-20", "status": "available", "winning_score": 85},
-    ...
-  ],
-  "my_score": 92,
-  "can_book": true,
-  "past_bookings": 5,
-  "win_rate": 0.35
-}
-```
-
-### 예약 API
-
-#### 예약 생성 (티켓팅)
-```http
-POST /api/bookings
-
-Request:
-{
-  "accommodation_id": "acc_123",
-  "check_in": "2024-12-20",
-  "check_out": "2024-12-22",
-  "guests": 2
-}
-
-Response:
-{
-  "id": "booking_456",
-  "status": "won",  # won | lost | pending
-  "accommodation_id": "acc_123",
-  "score_deducted": 15,
-  "remaining_score": 85,
-  "confirmation_number": "REFRESH-20241220-001"
-}
-```
-
-#### 예약 목록
-```http
-GET /api/bookings?status=completed
-
-Query Parameters:
-  - status: pending | won | lost | completed | cancelled
-  - sort: date | status
-
-Response:
-{
-  "items": [
-    {
-      "id": "booking_456",
-      "accommodation": {...},
-      "check_in": "2024-12-20",
-      "check_out": "2024-12-22",
-      "status": "won",
-      "created_at": "2024-12-10T14:30:00Z"
-    }
-  ]
-}
-```
-
-### 찜하기 API
-
-#### 찜하기 추가
-```http
-POST /api/wishlist
-
-Request:
-{
-  "accommodation_id": "acc_123",
-  "notify_when_bookable": true
-}
-
-Response:
-{
-  "id": "wishlist_789",
-  "accommodation_id": "acc_123",
-  "created_at": "2024-12-10T14:30:00Z"
-}
-```
-
-#### 찜하기 목록
-```http
-GET /api/wishlist
-
-Response:
-{
-  "items": [
-    {
-      "id": "wishlist_789",
-      "accommodation": {...},
-      "bookable_with_current_score": true,
-      "created_at": "2024-12-10T14:30:00Z"
-    }
-  ]
-}
-```
-
-### 사용자 API
-
-#### 내 프로필 & 점수
-```http
-GET /api/users/me
-
-Response:
-{
-  "id": "user_123",
-  "email": "user@company.com",
-  "name": "김임직",
-  "current_score": 100,
-  "total_bookings": 5,
-  "success_rate": 0.6,
-  "next_score_recovery": "2024-12-15T00:00:00Z",
-  "tier": "gold"  # silver | gold | platinum
-}
-```
-
-#### 점수 회복 스케줄 조회
-```http
-GET /api/users/me/score-recovery-schedule
-
-Response:
-{
-  "current_score": 85,
-  "max_score": 100,
-  "recovery_per_period": 10,
-  "recovery_period_hours": 24,
-  "next_recovery": "2024-12-15T00:00:00Z",
-  "recoveries_remaining_today": 2
-}
-```
-
-### 알림 설정 API
-
-#### 알림 설정 조회
-```http
-GET /api/notifications/preferences
-
-Response:
-{
-  "push_enabled": true,
-  "push_on_booking_result": true,
-  "push_on_wishlist_bookable": true,
-  "push_on_score_recovery": false,
-  "kakao_enabled": true,
-  "quiet_hours": {
-    "enabled": true,
-    "start": "22:00",
-    "end": "08:00"
-  }
-}
-```
-
-#### 알림 설정 업데이트
-```http
-PUT /api/notifications/preferences
-
-Request:
-{
-  "push_enabled": true,
-  "push_on_booking_result": true,
-  "kakao_enabled": true
-}
-
-Response: {설정된 preferences}
-```
-
-더 자세한 API 문서는 [API.md](./docs/API.md) 참고
 
 ---
 
 ## 배포 가이드
 
-### Frontend 배포 (Vercel)
+### Backend 배포 (Railway)
 
-#### 1. Vercel 연결
+#### 1. Railway CLI 설치
 ```bash
-npx vercel login
+npm i -g @railway/cli
 ```
 
-#### 2. 프로젝트 초기 배포
+#### 2. Railway 로그인 및 초기화
 ```bash
-cd frontend
-npx vercel
-```
-
-#### 3. 환경 변수 설정 (Vercel Dashboard)
-```
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=...
-NEXT_PUBLIC_API_URL=https://api.refresh-plus.com
-# 기타 환경 변수 추가
-```
-
-#### 4. 자동 배포 설정
-- GitHub 연결: Vercel에서 GitHub 저장소 선택
-- 자동 배포: main 브랜치에 push시 자동 배포
-- 미리보기: PR 생성시 자동 preview 배포
-
-### Backend 배포
-
-#### 옵션 1: Vercel (Node.js)
-FastAPI를 Vercel에 배포할 수 없으므로 다음 옵션 중 선택:
-
-#### 옵션 2: AWS Lambda + API Gateway
-```bash
-cd backend
-
-# 환경 변수 설정
-cp .env.example .env.production
-# .env.production 편집
-
-# Lambda 함수로 배포
-serverless deploy --stage production
-```
-
-#### 옵션 3: Railway/Render
-```bash
-# Railway 배포 (추천)
 railway login
 railway init
+```
+
+#### 3. 환경 변수 설정
+Railway 대시보드에서 다음 환경 변수 추가:
+- `DATABASE_URL`
+- `CLERK_SECRET_KEY`
+- `FIREBASE_CREDENTIALS_BASE64` (Base64 인코딩된 Firebase 인증 정보)
+- `KAKAO_REST_API_KEY`
+- `LULU_LALA_USERNAME`
+- `LULU_LALA_PASSWORD`
+- `LULU_LALA_RSA_PUBLIC_KEY`
+- `CORS_ORIGINS`
+
+#### 4. 배포
+```bash
+cd backend
 railway up
-
-# 또는 Render
-# render.yaml 설정 후 Render 대시보드에서 배포
 ```
 
-#### 옵션 4: Docker (AWS ECS)
+#### 5. Cron 작업 설정
+
+Railway에서 별도 서비스로 각 배치 작업 추가:
+
+**1) Daily Ticketing (매일 00:00 KST = 15:00 UTC)**
+```
+Service: Daily Ticketing
+Schedule: 0 15 * * *
+Command: python batch/run_daily_ticketing.py
+```
+
+**2) Accommodation Crawler (매일 01:00 KST = 16:00 UTC)**
+```
+Service: Accommodation Crawler
+Schedule: 0 16 * * *
+Command: python batch/run_accommodation_crawler.py
+```
+
+**3) FAQ Crawler (매일 02:00 KST = 17:00 UTC)**
+```
+Service: FAQ Crawler
+Schedule: 0 17 * * *
+Command: python batch/run_faq_crawler.py
+```
+
+**4) Today Accommodation Realtime (매시간)**
+```
+Service: Today Accommodation Realtime
+Schedule: 0 * * * *
+Command: python batch/run_today_accommodation_realtime.py
+```
+
+### Frontend 배포 (Vercel)
+
+#### 1. Vercel CLI 설치
 ```bash
-# ECR에 이미지 푸시
-aws ecr get-login-password --region ap-northeast-2 | \
-  docker login --username AWS --password-stdin 123456789.dkr.ecr.ap-northeast-2.amazonaws.com
-
-docker build -t refresh-plus-backend .
-docker tag refresh-plus-backend:latest \
-  123456789.dkr.ecr.ap-northeast-2.amazonaws.com/refresh-plus-backend:latest
-docker push \
-  123456789.dkr.ecr.ap-northeast-2.amazonaws.com/refresh-plus-backend:latest
-
-# ECS 배포
-# (CloudFormation 또는 Terraform으로 자동화)
+npm i -g vercel
 ```
 
-### 배치 작업 배포 (AWS Lambda)
-
-#### 1. 함수 생성
+#### 2. 배포
 ```bash
-cd backend/app/batch
-
-# daily_ticketing 함수
-zip -r ../../../daily_ticketing.zip daily_ticketing.py requirements.txt
-
-aws lambda create-function \
-  --function-name refresh-plus-daily-ticketing \
-  --runtime python3.11 \
-  --role arn:aws:iam::123456789:role/lambda-role \
-  --handler daily_ticketing.handler \
-  --zip-file fileb://daily_ticketing.zip
+cd frontend
+vercel
 ```
 
-#### 2. EventBridge 트리거 설정
-```bash
-# 매일 00:00 (UTC+9) 실행
-aws events put-rule \
-  --name refresh-plus-daily-ticketing \
-  --schedule-expression "cron(0 15 * * ? *)"  # UTC 기준
+#### 3. 환경 변수 설정
+Vercel 대시보드에서 환경 변수 추가 (`.env.local`과 동일)
 
-aws events put-targets \
-  --rule refresh-plus-daily-ticketing \
-  --targets "Id"="1","Arn"="arn:aws:lambda:ap-northeast-2:123456789:function:refresh-plus-daily-ticketing"
-```
+#### 4. 자동 배포 설정
+- GitHub 연결
+- `main` 브랜치 push 시 자동 배포
+- PR 생성 시 미리보기 배포
 
 ---
 
-## 모니터링 & 로깅
+## 개발 가이드
 
-### Sentry 설정
+### API 개발
+
+#### 새로운 기능 추가 시
+
+1. **모델 생성**: `backend/app/models/feature.py`
+2. **스키마 생성**: `backend/app/schemas/feature.py` (Pydantic)
+3. **서비스 로직**: `backend/app/services/feature_service.py`
+4. **라우트 생성**: `backend/app/routes/feature.py`
+5. **라우터 등록**: `backend/app/main.py`에서 `app.include_router()` 호출
+
+#### 배치 작업 추가 시
+
+1. **배치 작업 함수**: `backend/app/batch/new_job.py`
+2. **실행 스크립트**: `backend/batch/run_new_job.py`
+3. **Railway 설정**: `backend/batch/railway_new_job.json`
+4. **Railway Cron 서비스 추가**
+
+### Frontend 개발
+
+#### 새로운 페이지 추가 시
+
+1. **타입 정의**: `frontend/src/types/feature.ts`
+2. **API 함수**: `frontend/src/lib/api.ts`
+3. **커스텀 훅**: `frontend/src/hooks/useFeature.ts`
+4. **컴포넌트**: `frontend/src/components/feature/`
+5. **페이지**: `frontend/src/app/(protected)/feature/page.tsx`
+
+### 테스트
 
 #### Backend
-```python
-# app/main.py
-import sentry_sdk
-from sentry_sdk.integrations.fastapi import FastApiIntegration
-
-sentry_sdk.init(
-    dsn=settings.SENTRY_DSN,
-    integrations=[FastApiIntegration()],
-    traces_sample_rate=1.0,
-    environment=settings.ENVIRONMENT
-)
-```
-
-#### Frontend
-```typescript
-// frontend/src/lib/sentry.ts
-import * as Sentry from "@sentry/nextjs";
-
-Sentry.init({
-  dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
-  tracesSampleRate: 1.0,
-  environment: process.env.NODE_ENV,
-});
-```
-
-### 로깅
-
-#### Backend 로그 레벨
-```
-DEBUG:   개발 단계 상세 정보
-INFO:    일반 정보 (예약 생성, 점수 회복)
-WARNING: 경고 (높은 에러율, 이상 거래)
-ERROR:   오류 (DB 연결 실패, API 에러)
-CRITICAL: 심각한 오류 (시스템 다운)
-```
-
----
-
-## 성능 최적화
-
-### Frontend 최적화
-- **Next.js Image**: 이미지 자동 최적화 및 lazy loading
-- **Code Splitting**: 자동 route-based splitting
-- **Caching**: 정적 자산 장기 캐싱
-- **Database Queries**: React Query로 스마트 캐싱
-
-### Backend 최적화
-- **Async/Await**: FastAPI 전체에서 비동기 처리
-- **Connection Pooling**: SQLAlchemy 커넥션 풀
-- **Caching**: Redis로 자주 조회되는 데이터 캐싱
-- **Pagination**: 대량 데이터 조회시 페이지네이션
-
-### 데이터베이스 최적화
-- **Index**: 검색 칼럼에 인덱스 생성
-- **Query Optimization**: N+1 문제 해결
-- **Backup**: 일일 자동 백업
-
----
-
-## 보안
-
-### 인증 & 인가
-- **Clerk**: JWT 기반 인증
-- **RBAC**: 역할 기반 접근 제어
-- **CORS**: 안전한 크로스 도메인 요청
-
-### 데이터 보안
-- **HTTPS**: 모든 통신 암호화
-- **환경 변수**: 민감한 정보 저장
-- **Input Validation**: Pydantic으로 자동 검증
-- **Rate Limiting**: DDoS 방지
-
-### 컴플라이언스
-- **GDPR**: 개인정보 보호
-- **로그 감시**: 의심 활동 모니터링
-- **정기 감사**: 보안 취약점 검사
-
----
-
-## 테스트
-
-### Backend 테스트
 ```bash
 # 모든 테스트 실행
 pytest
@@ -737,72 +528,59 @@ pytest
 # 커버리지 리포트
 pytest --cov=app
 
-# 특정 테스트만 실행
+# 특정 테스트
 pytest tests/test_bookings.py -v
 ```
 
-### Frontend 테스트
+#### Frontend
 ```bash
 # 유닛 테스트
 npm run test
 
 # E2E 테스트
 npm run test:e2e
-
-# 커버리지
-npm run test:coverage
 ```
 
 ---
 
-## 기여 가이드
+## 환경 설정
 
-### 개발 워크플로우
+### Backend 환경 변수
 
-1. **이슈 선택**: GitHub Issues에서 작업할 이슈 선택
-2. **브랜치 생성**: `git checkout -b feature/issue-description`
-3. **코드 작성**: 커밋 메시지 규칙 준수
-4. **푸시**: `git push origin feature/issue-description`
-5. **PR 생성**: PR에 변경사항 상세 설명
-6. **코드 리뷰**: 팀 리뷰 후 머지
+| 변수명 | 설명 | 필수 |
+|-------|------|-----|
+| `DATABASE_URL` | 데이터베이스 연결 문자열 | ✅ |
+| `CLERK_SECRET_KEY` | Clerk 인증 비밀 키 | ✅ |
+| `FIREBASE_CREDENTIALS_PATH` | Firebase 인증 파일 경로 | ✅ |
+| `KAKAO_REST_API_KEY` | 카카오 REST API 키 | ✅ |
+| `LULU_LALA_USERNAME` | 크롤링 로그인 사용자명 | ✅ |
+| `LULU_LALA_PASSWORD` | 크롤링 로그인 비밀번호 | ✅ |
+| `LULU_LALA_RSA_PUBLIC_KEY` | 로그인 암호화 공개키 | ✅ |
+| `CORS_ORIGINS` | 허용된 CORS 오리진 (JSON 배열) | ✅ |
+| `MAX_WISHLIST_ITEMS` | 최대 찜하기 개수 | ❌ |
+| `POINTS_PER_BOOKING` | 예약당 차감 포인트 | ❌ |
+| `POINTS_RECOVERY_HOURS` | 포인트 회복 주기 (시간) | ❌ |
+| `MAX_POINTS` | 최대 포인트 | ❌ |
 
-### 커밋 메시지 규칙
-```
-[type]: [subject]
+### Frontend 환경 변수
 
-[body]
-
-Fixes #[issue-number]
-```
-
-타입:
-- `feat`: 새로운 기능
-- `fix`: 버그 수정
-- `docs`: 문서 수정
-- `style`: 코드 스타일 변경
-- `refactor`: 코드 리팩토링
-- `test`: 테스트 추가
-- `chore`: 빌드, 의존성 등
-
-예시:
-```
-feat: 찜하기 알림 기능 추가
-
-사용자가 찜한 숙소가 내 점수로 예약 가능해지면 푸시 알림 발송
-
-Fixes #123
-```
+| 변수명 | 설명 | 필수 |
+|-------|------|-----|
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk 공개 키 | ✅ |
+| `NEXT_PUBLIC_API_URL` | Backend API URL | ✅ |
+| `NEXT_PUBLIC_FIREBASE_*` | Firebase 설정 | ✅ |
 
 ---
 
 ## 문제 해결
 
-### Backend 시작 안될 때
+### Backend 실행 오류
+
 ```bash
 # 1. 가상 환경 활성화 확인
 source venv/bin/activate
 
-# 2. 모든 의존성 설치 확인
+# 2. 의존성 재설치
 pip install -r requirements.txt
 
 # 3. DB 마이그레이션 확인
@@ -810,52 +588,43 @@ alembic upgrade head
 
 # 4. 환경 변수 확인
 cat .env | grep DATABASE_URL
-
-# 5. 로그 확인
-tail -f logs/app.log
 ```
 
-### Frontend 시작 안될 때
+### Frontend 실행 오류
+
 ```bash
 # 1. node_modules 재설치
 rm -rf node_modules package-lock.json
 npm install
 
-# 2. 환경 변수 확인
-cat .env.local
-
-# 3. 캐시 삭제
+# 2. 캐시 삭제
 rm -rf .next
 
-# 4. 포트 체크
-lsof -i :3000
+# 3. 환경 변수 확인
+cat .env.local
 ```
 
-### Firebase 푸시 알림 안 올 때
-1. FCM 토큰 저장 확인
-2. Firebase 프로젝트 설정 확인
-3. 기기의 알림 권한 확인
-4. Firebase 콘솔에서 테스트 메시지 전송
+### 크롤링 실패
+
+1. `LULU_LALA_USERNAME`, `LULU_LALA_PASSWORD` 확인
+2. `LULU_LALA_RSA_PUBLIC_KEY` 형식 확인 (`\n` 문자 포함)
+3. Playwright 브라우저 설치: `playwright install chromium`
+4. 로그 확인: Railway 대시보드 → Logs
 
 ---
 
 ## 라이선스
 
-MIT License - 자세한 내용은 [LICENSE](./LICENSE) 참고
+MIT License
 
 ---
 
 ## 연락처
 
-- 📧 이메일: [dev@refresh-plus.com]
+- 📧 이메일: dev@refresh-plus.com
 - 🐛 이슈: [GitHub Issues](https://github.com/your-org/refresh-plus/issues)
-- 💬 토론: [GitHub Discussions](https://github.com/your-org/refresh-plus/discussions)
 
 ---
 
-## 지원
-
-이 프로젝트가 도움이 되었다면 ⭐ Star를 눌러주세요!
-
 **마지막 업데이트**: 2024년 12월
-**버전**: 1.0.0 (Alpha)
+**버전**: 1.0.0 (Beta)
