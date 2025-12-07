@@ -2,25 +2,27 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { wishlistApi } from "@/lib/api";
-
-// TODO: 실제 인증 시스템 구현 후 사용자 ID 가져오기
-const getUserId = () => "test-user-id";
+import { useAuth } from "@/contexts/AuthContext";
 
 export function useWishlist() {
+  const { isAuthenticated } = useAuth();
   const queryClient = useQueryClient();
-  const userId = getUserId();
 
-  const { data: wishlist = [] } = useQuery({
+  const { data: wishlist = [], isLoading: wishlistLoading } = useQuery({
     queryKey: ["wishlist"],
     queryFn: async () => {
-      const response = await wishlistApi.getAll(userId);
+      const token = localStorage.getItem("access_token") || "";
+      const response = await wishlistApi.getAll(token);
       return response.data || [];
     },
+    enabled: isAuthenticated, // 로그인한 경우에만 쿼리 실행
   });
 
   const addToWishlistMutation = useMutation({
     mutationFn: async (accommodationId: string) => {
-      const response = await wishlistApi.add(userId, accommodationId);
+      if (!isAuthenticated) throw new Error("User not authenticated");
+      const token = localStorage.getItem("access_token") || "";
+      const response = await wishlistApi.add(token, accommodationId);
       return response.data;
     },
     onSuccess: () => {
@@ -30,11 +32,14 @@ export function useWishlist() {
 
   const removeFromWishlistMutation = useMutation({
     mutationFn: async (accommodationId: string) => {
+      if (!isAuthenticated) throw new Error("User not authenticated");
+
       // Find the wishlist item ID for this accommodation
       const item = wishlist.find((w: any) => w.accommodation_id === accommodationId);
       if (!item) throw new Error("Wishlist item not found");
 
-      const response = await wishlistApi.remove(userId, item.id);
+      const token = localStorage.getItem("access_token") || "";
+      const response = await wishlistApi.remove(token, item.id);
       return response.data;
     },
     onSuccess: () => {
@@ -46,6 +51,6 @@ export function useWishlist() {
     wishlist,
     addToWishlist: addToWishlistMutation.mutateAsync,
     removeFromWishlist: removeFromWishlistMutation.mutateAsync,
-    isLoading: addToWishlistMutation.isPending || removeFromWishlistMutation.isPending,
+    isLoading: addToWishlistMutation.isPending || removeFromWishlistMutation.isPending || wishlistLoading,
   };
 }

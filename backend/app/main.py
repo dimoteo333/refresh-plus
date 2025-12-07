@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 from app.config import settings
 from app.database import engine, Base
-from app.routes import accommodations, bookings, users, wishlist, notifications, scores, chatbot
+from app.routes import accommodations, bookings, users, wishlist, notifications, scores, chatbot, auth
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -69,6 +69,10 @@ async def health_check():
     }
 
 # 라우터 등록
+
+# 인증 라우터 (먼저 등록 - 다른 라우터들이 의존할 수 있음)
+app.include_router(auth.router)
+
 app.include_router(
     accommodations.router,
     prefix="/api/accommodations",

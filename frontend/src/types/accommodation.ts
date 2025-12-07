@@ -7,6 +7,7 @@ export interface Accommodation {
   capacity?: number;
   images?: string[];
   amenities?: string[];
+  summary?: string[];
   rating: number;
   can_book_with_current_score: boolean;
   avg_winning_score_4weeks: number;
@@ -40,6 +41,7 @@ export interface SearchAccommodation {
   region: string;
   accommodation_type?: string;
   first_image?: string;
+  summary?: string[];
   avg_score?: number;
   is_wishlisted: boolean;
   notify_enabled: boolean;
@@ -77,6 +79,7 @@ export interface AccommodationDetail {
   accommodation_type?: string;
   capacity: number;
   images: string[];
+  summary?: string[];
   available_dates: AvailableDate[];
   weekday_averages: WeekdayAverage[];
   is_wishlisted?: boolean;

@@ -23,6 +23,7 @@
 | `accommodation_type` | VARCHAR | NULLABLE | 숙소 타입 |
 | `capacity` | INTEGER | DEFAULT 2 | 숙소 인원 |
 | `images` | JSON | DEFAULT [] | 숙소 이미지 URL (여러 개) |
+| `summary` | JSON | DEFAULT [] | 숙소 특징 요약 (최대 5개) |
 | `created_at` | DATETIME | DEFAULT NOW() | 등록시간 |
 | `updated_at` | DATETIME | DEFAULT NOW() | 업데이트시간 |
 
@@ -84,7 +85,7 @@
 |--------|------|----------|------|
 | `id` | VARCHAR | PRIMARY KEY, INDEX | 사용자id (PK) |
 | `name` | VARCHAR | | 사용자명 |
-| `points` | INTEGER | DEFAULT 100 | 점수 |
+| `points` | FLOAT | DEFAULT 100 | 점수 (소수점 지원) |
 | `available_nights` | INTEGER | DEFAULT 0 | 사용가능박수 |
 | `created_at` | DATETIME | DEFAULT NOW() | 등록시간 |
 | `updated_at` | DATETIME | DEFAULT NOW() | 업데이트시간 |
@@ -208,5 +209,3 @@ users (1) ──< (N) wishlists
 cd backend
 python scripts/recreate_database.py
 ```
-
-

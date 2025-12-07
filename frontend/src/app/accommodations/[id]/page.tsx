@@ -186,6 +186,22 @@ export default function AccommodationDetailPage() {
               </p>
             </div>
           </div>
+
+          {accommodation.summary && accommodation.summary.length > 0 && (
+            <div className="mt-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-3">숙소 특징</h2>
+              <div className="flex flex-wrap gap-2">
+                {accommodation.summary.map((item, index) => (
+                  <Badge
+                    key={`${accommodation.id}-feature-${index}`}
+                    className="bg-sky-100 text-sky-800 hover:bg-sky-100"
+                  >
+                    {item}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 예약 가능 날짜 */}

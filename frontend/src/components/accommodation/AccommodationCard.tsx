@@ -56,6 +56,20 @@ export default function AccommodationCard({
           <span>{accommodation.region}</span>
         </div>
 
+        {accommodation.summary && accommodation.summary.length > 0 && (
+          <div className="mb-3 flex flex-wrap gap-2">
+            {accommodation.summary.slice(0, 3).map((item, index) => (
+              <Badge
+                key={`${accommodation.id}-card-summary-${index}`}
+                variant="outline"
+                className="border-sky-100 text-sky-700"
+              >
+                {item}
+              </Badge>
+            ))}
+          </div>
+        )}
+
         {/* 가격 */}
         <div className="mb-3 font-bold text-xl">
           ₩{accommodation.price?.toLocaleString()}

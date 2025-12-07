@@ -86,7 +86,7 @@ export function useChat({ token }: UseChatOptions) {
       id: "welcome",
       role: "assistant",
       content:
-        "안녕하세요! 👋\n\n저는 Refresh Plus 연성소 예약 플랫폼의 AI 도우미입니다.\n\n숙소 예약, 포인트 시스템, 이용 방법 등에 대해 궁금하신 점을 물어보세요!",
+        "안녕하세요! 👋\n신한은행 임직원용 연성소 예약의 AI 상담사입니다.\n숙소 예약, 점수 계산, 취소 규정 등에 대해 궁금하신 점을 물어보세요!",
       timestamp: new Date(),
     };
     setMessages([welcomeMessage]);

@@ -7,7 +7,11 @@
 
 import asyncio
 import json
+import re
+from dataclasses import dataclass
 from datetime import datetime
+from html import unescape
+from urllib.parse import urljoin
 from typing import List, Dict, Optional
 from sqlalchemy import select
 from app.database import AsyncSessionLocal
@@ -23,10 +27,233 @@ import base64
 
 logger = get_logger(__name__)
 
+
+@dataclass
+class LoginTimingProfile:
+    """Playwright 대기 시간을 조절하기 위한 프로파일"""
+
+    preload_delay_ms: int = 2000
+    login_func_wait_ms: int = 2000
+    post_submit_wait_ms: int = 5000
+    final_settle_wait_ms: int = 3000
+    nav_poll_interval_ms: int = 1000
+    max_nav_wait_seconds: int = 30
+    reservation_pre_click_ms: int = 2000
+    post_reservation_click_ms: int = 3000
+
+
+STABLE_LOGIN_TIMING = LoginTimingProfile()
+FAST_LOGIN_TIMING = LoginTimingProfile(
+    preload_delay_ms=700,
+    login_func_wait_ms=600,
+    post_submit_wait_ms=2000,
+    final_settle_wait_ms=500,
+    nav_poll_interval_ms=400,
+    max_nav_wait_seconds=12,
+    reservation_pre_click_ms=700,
+    post_reservation_click_ms=1200,
+)
+
 # 로그인 URL
 LULU_LALA_LOGIN_URL = "https://lulu-lala.zzzmobile.co.kr/login.html"
 # 숙소 조회 URL
 SHB_REFRESH_INTRO_URL = "https://shbrefresh.interparkb2b.co.kr/intro"
+SHB_REFRESH_INDEX_URL = "https://shbrefresh.interparkb2b.co.kr/index"
+SHB_DIRECT_URL_PATTERN = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
+
+
+def _extract_shbrefresh_urls_from_blob(blob: str) -> List[str]:
+    """Pull shbrefresh/interpark URLs from a string fragment."""
+    if not blob:
+        return []
+
+    normalized = unescape(blob)
+    normalized = normalized.replace("\\/", "/").replace("\\u002F", "/")
+    urls: List[str] = []
+
+    for match in SHB_DIRECT_URL_PATTERN.findall(normalized):
+        cleaned = match.strip().rstrip("');, ")
+        lowered = cleaned.lower()
+        if "shbrefresh" in lowered or "interparkb2b" in lowered:
+            if cleaned not in urls:
+                urls.append(cleaned)
+
+    return urls
+
+
+async def _collect_shbrefresh_link_candidates(element) -> List[str]:
+    """Inspect the DOM node for any embedded shbrefresh URLs."""
+    fragments: List[str] = []
+    try:
+        attributes = await element.evaluate(
+            "(el) => { const attrs = {}; for (const attr of el.attributes) { attrs[attr.name] = attr.value; } return attrs; }"
+        )
+        if isinstance(attributes, dict):
+            fragments.extend([str(value) for value in attributes.values() if value])
+    except Exception:
+        pass
+
+    for getter in ("inner_html", "text_content"):
+        try:
+            value = await getattr(element, getter)()
+            if value:
+                fragments.append(value)
+        except Exception:
+            continue
+
+    urls: List[str] = []
+    for fragment in fragments:
+        for url in _extract_shbrefresh_urls_from_blob(fragment):
+            if url not in urls:
+                urls.append(url)
+
+    return urls
+
+
+async def _collect_page_shbrefresh_urls(page: Page) -> List[str]:
+    """Extract shbrefresh/interpark URLs from the entire page content."""
+    try:
+        html = await page.content()
+    except Exception as content_error:
+        logger.debug(f"Failed to read page content for shbrefresh discovery: {content_error}")
+        return []
+
+    return _extract_shbrefresh_urls_from_blob(html)
+
+
+async def _find_active_refresh_sso_href(page: Page) -> Optional[str]:
+    """Locate the Refresh SSO link under swiper slides without extra waits."""
+    selectors = [
+        "li.swiper-slide.swiper-slide-active a[href*='vservice'][href*='sh_gmidas']",
+        "li.swiper-slide.swiper-slide-active a[href]",
+        "li.swiper-slide a[href*='vservice'][href*='sh_gmidas']",
+        "li.swiper-slide a[href]",
+    ]
+
+    for selector in selectors:
+        try:
+            anchor = await page.query_selector(selector)
+            if anchor:
+                href = await anchor.get_attribute("href")
+                if href:
+                    full_href = urljoin(page.url, href)
+                    logger.info(f"Found Refresh SSO link via selector {selector}: {full_href}")
+                    return full_href
+        except Exception as selector_error:
+            logger.debug(f"Selector {selector} did not resolve Refresh SSO link: {selector_error}")
+
+    try:
+        hrefs = await page.evaluate(
+            "() => Array.from(document.querySelectorAll('li.swiper-slide a[href]')).map(a => a.getAttribute('href'))"
+        )
+        for href in hrefs or []:
+            if href and "vservice" in href and "sh_gmidas" in href:
+                full_href = urljoin(page.url, href)
+                logger.info(f"Found Refresh SSO link via bulk scan: {full_href}")
+                return full_href
+    except Exception as eval_error:
+        logger.debug(f"Bulk scan for SSO href failed: {eval_error}")
+
+    return None
+
+
+async def _open_refresh_sso_in_new_tab(
+    page: Page,
+    context: BrowserContext,
+    timing_profile: LoginTimingProfile,
+) -> tuple[bool, Optional[Page]]:
+    """Open the active Refresh SSO link in a fresh tab and drive it to the index page."""
+    sso_href = await _find_active_refresh_sso_href(page)
+    if not sso_href:
+        logger.warning("Could not locate Refresh SSO link on active swiper slide")
+        return False, None
+
+    logger.info(f"Opening Refresh SSO link in new tab: {sso_href}")
+    sso_page = await context.new_page()
+
+    try:
+        await sso_page.goto(sso_href, wait_until="networkidle", timeout=20000)
+    except Exception as nav_error:
+        logger.error(f"Failed to open Refresh SSO link: {nav_error}")
+        try:
+            await sso_page.close()
+        except Exception:
+            pass
+        return False, None
+
+    if timing_profile.reservation_pre_click_ms:
+        await sso_page.wait_for_timeout(timing_profile.reservation_pre_click_ms)
+
+    intro_loaded = "intro" in sso_page.url.lower()
+    success = await _ensure_intro_then_index(
+        sso_page,
+        timing_profile,
+        intro_already_loaded=intro_loaded,
+    )
+
+    if success:
+        return True, sso_page
+
+    logger.warning("Refresh SSO tab did not complete navigation to index, closing tab")
+    try:
+        await sso_page.close()
+    except Exception:
+        pass
+    return False, None
+
+
+async def _ensure_intro_then_index(
+    page: Page,
+    timing_profile: LoginTimingProfile,
+    intro_already_loaded: bool = False,
+) -> bool:
+    """Guarantee the Intro -> Index navigation sequence to preserve SSO state."""
+    try:
+        if not intro_already_loaded:
+            logger.info("Loading shbrefresh intro page to seed session cookies...")
+            await page.goto(SHB_REFRESH_INTRO_URL, wait_until="networkidle")
+            if timing_profile.reservation_pre_click_ms:
+                await page.wait_for_timeout(timing_profile.reservation_pre_click_ms)
+
+        logger.info("Navigating to shbrefresh reservation index page...")
+        await page.goto(SHB_REFRESH_INDEX_URL, wait_until="networkidle")
+        if timing_profile.post_reservation_click_ms:
+            await page.wait_for_timeout(timing_profile.post_reservation_click_ms)
+
+        logger.info(f"Reached reservation index page: {page.url}")
+        return True
+    except Exception as transition_error:
+        logger.error(f"Failed during intro/index transition: {transition_error}")
+        return False
+
+
+async def _attempt_direct_link_navigation(
+    context: BrowserContext,
+    candidate_urls: List[str],
+    timing_profile: LoginTimingProfile,
+) -> Optional[Page]:
+    """Try opening extracted shbrefresh URLs in isolation before falling back."""
+    for candidate in candidate_urls:
+        candidate_page = await context.new_page()
+        logger.info(f"Trying direct Refresh link navigation: {candidate}")
+        success = False
+        try:
+            await candidate_page.goto(candidate, wait_until="networkidle")
+            intro_loaded = "intro" in candidate_page.url.lower()
+            success = await _ensure_intro_then_index(
+                candidate_page,
+                timing_profile,
+                intro_already_loaded=intro_loaded,
+            )
+            if success:
+                return candidate_page
+        except Exception as direct_error:
+            logger.warning(f"Direct link navigation failed for {candidate}: {direct_error}")
+        finally:
+            if not success and not candidate_page.is_closed():
+                await candidate_page.close()
+
+    return None
 
 
 def encrypt_rsa(plaintext: str, public_key_pem: str) -> str:
@@ -51,7 +278,8 @@ async def login_to_lulu_lala(
     page: Page,
     username: str,
     password: str,
-    rsa_public_key: str
+    rsa_public_key: str,
+    timing: LoginTimingProfile | None = None
 ) -> bool:
     """
     lulu-lala 웹사이트에 로그인
@@ -66,9 +294,12 @@ async def login_to_lulu_lala(
         bool: 로그인 성공 여부
     """
     try:
+        timing_profile = timing or STABLE_LOGIN_TIMING
+
         logger.info(f"Navigating to login page: {LULU_LALA_LOGIN_URL}")
         await page.goto(LULU_LALA_LOGIN_URL, wait_until="networkidle")
-        await page.wait_for_timeout(2000)  # 페이지 로딩 대기
+        if timing_profile.preload_delay_ms:
+            await page.wait_for_timeout(timing_profile.preload_delay_ms)
         
         # 입력 필드 찾기
         username_input = page.locator('input#username')
@@ -83,7 +314,14 @@ async def login_to_lulu_lala(
         await password_input.fill(password)
 
         # JavaScript의 login 함수를 직접 호출 (test_crawler_standalone.py와 동일한 방식)
-        await page.wait_for_timeout(2000)  # login 함수 로드 대기
+        if timing_profile.login_func_wait_ms:
+            try:
+                await page.wait_for_function(
+                    "typeof login === 'function'",
+                    timeout=timing_profile.login_func_wait_ms
+                )
+            except Exception:
+                await page.wait_for_timeout(min(500, timing_profile.login_func_wait_ms))
 
         try:
             login_result = await page.evaluate(f"""
@@ -112,10 +350,18 @@ async def login_to_lulu_lala(
             logger.info(f"JavaScript execution result: {login_result}")
 
             # 로그인 처리 대기
-            await page.wait_for_timeout(5000)
+            if timing_profile.post_submit_wait_ms:
+                try:
+                    await page.wait_for_load_state(
+                        "networkidle",
+                        timeout=timing_profile.post_submit_wait_ms
+                    )
+                except Exception:
+                    await page.wait_for_timeout(timing_profile.post_submit_wait_ms)
 
-            # 로그인 완료 대기
-            await page.wait_for_timeout(3000)
+            # 로그인 완료 대기 및 세션 세팅 시간 확보
+            if timing_profile.final_settle_wait_ms:
+                await page.wait_for_timeout(timing_profile.final_settle_wait_ms)
 
             # 로그인 성공 확인
             cookies = await page.context.cookies()
@@ -152,85 +398,210 @@ async def login_to_lulu_lala(
         return False
 
 
-async def navigate_to_reservation_page(page: Page, context: BrowserContext) -> tuple[bool, Page]:
+async def navigate_to_reservation_page(
+    page: Page,
+    context: BrowserContext,
+    timing: LoginTimingProfile | None = None
+) -> tuple[bool, Page]:
     """
-    lulu-lala 메인 페이지에서 Refresh (연성소) 아이콘 클릭 후
-    SSO 인증을 거쳐 shbrefresh 페이지로 이동하고 RESERVATION 버튼 클릭
-    
+    lulu-lala 로그인 후 노출되는 Refresh SSO 링크를 통해 예약 페이지로 이동
+    - swiper-slide 내 활성화된 Refresh 링크를 새 탭에서 호출해 자동 로그인
+    - 실패 시 기존 direct intro/index 접근 및 아이콘 클릭 방식으로 폴백
+
     Args:
-        page: Playwright Page 객체
-        context: BrowserContext 객체 (새 페이지 감지용)
-    
+        page: Playwright Page 객체 (로그인 완료된 상태)
+        context: BrowserContext 객체
+        timing: 타이밍 프로파일
+
     Returns:
         tuple[bool, Page]: (성공 여부, 최종 페이지 객체)
     """
     try:
-        # 팝업/다이얼로그 처리 핸들러 설정
-        async def handle_dialog(dialog):
-            logger.info(f"Dialog detected: {dialog.type} - {dialog.message[:100]}")
-            await dialog.accept()
-        
-        page.on("dialog", handle_dialog)
-        context.on("page", lambda new_page: new_page.on("dialog", handle_dialog))
-        
-        # STEP 1: Refresh (연성소) 아이콘 찾기
-        logger.info("Looking for Refresh (연성소) icon on lulu-lala main page...")
-        
+        timing_profile = timing or STABLE_LOGIN_TIMING
+
+        logger.info("=" * 60)
+        logger.info("Navigating to shbrefresh via Refresh SSO link")
+        logger.info("=" * 60)
+
+        # STEP 0: 로그인 후 노출된 swiper-slide에서 SSO 링크 바로 호출 (새 탭)
+        logger.info("Attempting Refresh SSO link from active swiper slide...")
+        link_success, tab_page = await _open_refresh_sso_in_new_tab(page, context, timing_profile)
+        if link_success and tab_page:
+            logger.info("=" * 60)
+            logger.info("✓ Successfully navigated via active swiper SSO link")
+            logger.info(f"✓ Final URL: {tab_page.url}")
+            logger.info("=" * 60)
+            return True, tab_page
+
+        logger.warning("Active swiper SSO link navigation failed, falling back to direct intro/index approach")
+
+        # 현재 쿠키 상태 확인 (디버깅용)
+        cookies = await context.cookies()
+        logger.info(f"Current cookies count: {len(cookies)}")
+        cookie_domains = set(c.get('domain', '') for c in cookies)
+        logger.info(f"Cookie domains: {cookie_domains}")
+
+        # STEP 1: shbrefresh intro 페이지로 직접 이동 (SSO 쿠키 자동 전달)
+        logger.info(f"[Direct SSO] Navigating to: {SHB_REFRESH_INTRO_URL}")
+
+        try:
+            # 같은 페이지 객체에서 직접 이동 (새 탭 생성하지 않음)
+            response = await page.goto(
+                SHB_REFRESH_INTRO_URL,
+                wait_until="networkidle",
+                timeout=30000
+            )
+
+            logger.info(f"Response status: {response.status if response else 'N/A'}")
+            logger.info(f"Current URL after intro: {page.url}")
+
+        except Exception as goto_error:
+            logger.error(f"Failed to navigate to intro page: {goto_error}")
+            await page.screenshot(path="error_sso_intro_failed.png", full_page=True)
+
+            # Fallback: 복잡한 아이콘 클릭 방식 시도
+            logger.warning("Falling back to icon click method...")
+            return await _fallback_icon_click_navigation(page, context, timing_profile)
+
+        # 안정화 대기
+        if timing_profile.reservation_pre_click_ms:
+            await page.wait_for_timeout(timing_profile.reservation_pre_click_ms)
+
+        # 로그인 실패 여부 확인
+        current_url = page.url.lower()
+        if "error" in current_url or ("login" in current_url and "lulu-lala" in current_url):
+            logger.error("SSO failed - redirected back to login page")
+            await page.screenshot(path="error_sso_login_redirect.png", full_page=True)
+
+            # 쿠키 재확인
+            cookies_after = await context.cookies()
+            logger.error(f"Cookies after failed navigation: {len(cookies_after)}")
+
+            # Fallback
+            logger.warning("Falling back to icon click method...")
+            return await _fallback_icon_click_navigation(page, context, timing_profile)
+
+        logger.info(f"✓ Successfully reached intro page: {page.url}")
+
+        # STEP 2: index 페이지로 이동
+        logger.info(f"[Direct SSO] Navigating to: {SHB_REFRESH_INDEX_URL}")
+
+        try:
+            response = await page.goto(
+                SHB_REFRESH_INDEX_URL,
+                wait_until="networkidle",
+                timeout=30000
+            )
+
+            logger.info(f"Response status: {response.status if response else 'N/A'}")
+            logger.info(f"Final URL: {page.url}")
+
+        except Exception as index_error:
+            logger.error(f"Failed to navigate to index page: {index_error}")
+            await page.screenshot(path="error_sso_index_failed.png", full_page=True)
+            return False, page
+
+        # 안정화 대기
+        if timing_profile.post_reservation_click_ms:
+            await page.wait_for_timeout(timing_profile.post_reservation_click_ms)
+
+        # 최종 확인
+        final_url = page.url.lower()
+
+        if ("shbrefresh" in final_url or "interparkb2b" in final_url) and \
+           "error" not in final_url and "login" not in final_url:
+            logger.info("=" * 60)
+            logger.info("✓ Successfully navigated to reservation page via direct SSO")
+            logger.info(f"✓ Final URL: {page.url}")
+            logger.info("=" * 60)
+            return True, page
+
+        logger.error("Failed to reach reservation page - unexpected final URL")
+        await page.screenshot(path="error_sso_unexpected_url.png", full_page=True)
+        return False, page
+
+    except Exception as e:
+        logger.error(f"Error in SSO navigation: {str(e)}", exc_info=True)
+        await page.screenshot(path="error_sso_exception.png", full_page=True)
+        return False, page
+
+
+async def _fallback_icon_click_navigation(
+    page: Page,
+    context: BrowserContext,
+    timing_profile: LoginTimingProfile
+) -> tuple[bool, Page]:
+    """
+    Fallback 방식: Refresh 아이콘 클릭 후 새 탭 전환
+    (SSO 직접 접근이 실패했을 때만 사용)
+    """
+    try:
+        logger.info("=" * 60)
+        logger.info("FALLBACK: Trying icon click navigation...")
+        logger.info("=" * 60)
+
+        # Refresh 아이콘 찾기
         frames = page.frames
         refresh_element = None
         found_in_frame = None
-        
-        # 모든 프레임에서 검색
+
         for frame in [page] + list(frames):
             try:
                 all_links = await frame.query_selector_all("a, button, [role='button'], [onclick], img")
-                
+
                 for element in all_links:
                     try:
                         text = await element.inner_text() if hasattr(element, 'inner_text') else ""
                         href = await element.get_attribute("href") or ""
+                        onclick = await element.get_attribute("onclick") or ""
                         title = await element.get_attribute("title") or ""
                         alt = await element.get_attribute("alt") or ""
                         src = await element.get_attribute("src") or ""
-                        
-                        combined_text = f"{text} {href} {title} {alt} {src}".lower()
-                        
-                        # sh_gmidas가 포함된 링크 우선 (shbrefresh로 가는 링크)
+
+                        combined_text = f"{text} {href} {onclick} {title} {alt} {src}".lower()
+
                         if "sh_gmidas" in combined_text or ("shbrefresh" in combined_text and "vservice" in combined_text):
-                            logger.info(f"Found shbrefresh link: {href[:200]}")
+                            logger.info(f"Found Refresh icon: {href[:100]}")
                             refresh_element = element
                             found_in_frame = frame
                             break
                     except:
                         continue
-                
+
                 if refresh_element:
                     break
             except:
                 continue
-        
+
         if not refresh_element:
-            logger.error("Refresh (연성소) icon not found")
+            logger.error("Refresh icon not found")
             return False, page
-        
-        # STEP 2: Refresh 아이콘 클릭
-        logger.info("Clicking Refresh (연성소) icon...")
-        
-        # 새 페이지 감지
+
+        # Dialog 핸들러 설정
+        async def handle_dialog(dialog):
+            logger.info(f"Dialog detected: {dialog.type}")
+            await dialog.accept()
+
+        page.on("dialog", handle_dialog)
+        context.on("page", lambda new_page: new_page.on("dialog", handle_dialog))
+
+        # 아이콘 클릭
+        logger.info("Clicking Refresh icon...")
+
         pages_before = len(context.pages)
         shbrefresh_page = None
-        
+
         def handle_new_page(new_page):
             nonlocal shbrefresh_page
             url = new_page.url
             if "shbrefresh" in url.lower() or "interparkb2b" in url.lower():
                 if "error" not in url.lower() and "login" not in url.lower():
-                    logger.info(f"shbrefresh page detected: {url}")
+                    logger.info(f"New shbrefresh page detected: {url}")
                     shbrefresh_page = new_page
-        
+
         context.on("page", handle_new_page)
-        
-        # 클릭
+
+        # 클릭 실행
         if found_in_frame and found_in_frame != page:
             try:
                 await refresh_element.click(timeout=5000)
@@ -239,31 +610,28 @@ async def navigate_to_reservation_page(page: Page, context: BrowserContext) -> t
         else:
             await refresh_element.scroll_into_view_if_needed()
             await refresh_element.click()
-        
-        # shbrefresh 페이지로 이동 대기
-        max_wait = 30
-        waited = 0
-        
-        while waited < max_wait:
-            await page.wait_for_timeout(1000)
-            waited += 1
-            
-            # 새 페이지 확인
+
+        # 새 페이지 대기
+        poll_interval = max(200, timing_profile.nav_poll_interval_ms)
+        max_wait_ms = timing_profile.max_nav_wait_seconds * 1000
+        waited_ms = 0
+
+        while waited_ms < max_wait_ms:
+            await page.wait_for_timeout(poll_interval)
+            waited_ms += poll_interval
+
             if shbrefresh_page:
                 await shbrefresh_page.wait_for_load_state("networkidle", timeout=10000)
-                await shbrefresh_page.wait_for_timeout(2000)
                 page = shbrefresh_page
-                logger.info(f"Switched to shbrefresh page: {page.url}")
+                logger.info(f"Switched to new shbrefresh page: {page.url}")
                 break
-            
-            # 현재 페이지 URL 확인
+
             current_url = page.url
             if "shbrefresh" in current_url.lower() or "interparkb2b" in current_url.lower():
                 if "error" not in current_url.lower() and "login" not in current_url.lower():
-                    logger.info(f"Reached shbrefresh page: {current_url}")
+                    logger.info(f"Same page navigated to shbrefresh: {current_url}")
                     break
-            
-            # 새 탭 확인
+
             if len(context.pages) > pages_before:
                 for p in context.pages:
                     try:
@@ -272,84 +640,29 @@ async def navigate_to_reservation_page(page: Page, context: BrowserContext) -> t
                             if "error" not in p_url.lower() and "login" not in p_url.lower():
                                 await p.wait_for_load_state("networkidle", timeout=10000)
                                 page = p
-                                logger.info(f"Switched to new shbrefresh tab: {page.url}")
+                                logger.info(f"Found shbrefresh in new tab: {page.url}")
                                 break
                     except:
                         continue
-            
-            if waited % 5 == 0:
-                logger.debug(f"Waiting for shbrefresh page... ({waited}/{max_wait}s)")
-        
-        # STEP 3: RESERVATION 버튼 찾기 및 클릭
-        logger.info("Looking for RESERVATION button on shbrefresh page...")
-        await page.wait_for_timeout(2000)
-        
-        # 팝업 다이얼로그 핸들러 설정
-        def handle_dialog(dialog):
-            logger.info(f"Dialog detected: {dialog.message[:100]}")
-            dialog.accept()
-        
-        page.on("dialog", handle_dialog)
-        
-        # RESERVATION 버튼 찾기 (모든 클릭 가능한 요소에서 검색)
-        reservation_element = None
-        
-        # 프레임 확인
-        frames = page.frames
-        search_pages = [page] + list(frames)
-        
-        for search_page in search_pages:
-            try:
-                # 모든 클릭 가능한 요소 찾기
-                elements = await search_page.query_selector_all(
-                    "button, a, [role='button'], [onclick], [class*='btn'], [class*='button'], [class*='menu']"
-                )
-                
-                for element in elements:
-                    try:
-                        text = await element.inner_text() if hasattr(element, 'inner_text') else ""
-                        if not text:
-                            text = await element.text_content() if hasattr(element, 'text_content') else ""
-                        
-                        class_name = await element.get_attribute("class") or ""
-                        combined = f"{text} {class_name}".upper()
-                        
-                        if "RESERVATION" in combined:
-                            logger.info(f"Found RESERVATION element: {text[:50]}")
-                            reservation_element = element
-                            break
-                    except:
-                        continue
-                
-                if reservation_element:
-                    break
-            except:
-                continue
-        
-        if not reservation_element:
-            logger.warning("RESERVATION button not found, trying to proceed anyway...")
-            await page.screenshot(path="intro_page_before_click.png", full_page=True)
-            return True, page  # 버튼을 찾지 못해도 계속 진행
-        
-        # RESERVATION 버튼 클릭
-        logger.info("Clicking RESERVATION button...")
-        try:
-            await reservation_element.click()
-        except:
-            # JavaScript로 클릭
-            await reservation_element.evaluate("el => el.click()")
-        
-        await page.wait_for_timeout(3000)  # 페이지 이동 대기
-        
-        # 페이지 스크린샷 저장 (디버깅용)
-        await page.screenshot(path="reservation_page_after_click.png", full_page=True)
-        
-        logger.info(f"Successfully navigated to reservation page: {page.url}")
-        return True, page  # page 객체도 반환 (새 페이지로 전환되었을 수 있음)
-        
+
+        # intro -> index 전환
+        current_url = page.url.lower()
+        if "shbrefresh" not in current_url and "interparkb2b" not in current_url:
+            logger.error("Failed to reach shbrefresh via icon click")
+            return False, page
+
+        intro_loaded = "intro" in current_url
+        success = await _ensure_intro_then_index(page, timing_profile, intro_already_loaded=intro_loaded)
+
+        if success:
+            logger.info("✓ Successfully navigated via fallback icon click method")
+            return True, page
+
+        logger.error("Fallback method failed")
+        return False, page
+
     except Exception as e:
-        logger.error(f"Error navigating to reservation page: {str(e)}", exc_info=True)
-        await page.screenshot(path="error_navigation.png", full_page=True)
+        logger.error(f"Fallback navigation error: {str(e)}", exc_info=True)
         return False, page
 
 
@@ -1431,6 +1744,8 @@ async def save_accommodations_to_db(accommodations: List[Dict]):
                     capacity_value = acc_data.get("capacity")
                     if capacity_value is not None:
                         existing_acc.capacity = capacity_value
+                    if acc_data.get("summary") is not None:
+                        existing_acc.summary = acc_data.get("summary")
 
                     # 이미지 URL 업데이트 (여러 개)
                     new_image_urls = acc_data.get("image_urls", [])
@@ -1457,6 +1772,7 @@ async def save_accommodations_to_db(accommodations: List[Dict]):
                         images=acc_data.get("image_urls", []),  # 이미지 URL 리스트
                         accommodation_type=acc_data.get("accommodation_type"),
                         capacity=acc_data.get("capacity") or 2,  # 기본값
+                        summary=acc_data.get("summary", []),
                     )
                     db.add(new_acc)
                     saved_accommodations += 1

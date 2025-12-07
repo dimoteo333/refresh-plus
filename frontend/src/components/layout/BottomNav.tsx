@@ -9,6 +9,7 @@ import {
   Hotel,
   Search,
 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 const navItems = [
   { label: "홈", icon: HomeIcon, href: "/" },
@@ -18,12 +19,16 @@ const navItems = [
   { label: "MY숙소", icon: Hotel, href: "/my" },
 ];
 
+// Routes that require an authenticated session
+const protectedRoutes = new Set(["/wishlist", "/my", "/chat", "/bookings"]);
+
 interface BottomNavProps {
   activeHref?: string;
 }
 
 export default function BottomNav({ activeHref }: BottomNavProps = {}) {
   const pathname = usePathname();
+  const { isAuthenticated } = useAuth();
   const currentActive = activeHref || pathname;
 
   return (
@@ -38,7 +43,11 @@ export default function BottomNav({ activeHref }: BottomNavProps = {}) {
               return (
                 <Link
                   key={item.label}
-                  href={item.href}
+                  href={
+                    !isAuthenticated && protectedRoutes.has(item.href)
+                      ? `/login?redirect=${encodeURIComponent(item.href)}`
+                      : item.href
+                  }
                   className="flex flex-1 flex-col items-center gap-1 py-1 text-[11px] font-semibold text-slate-800 transition-transform active:scale-95"
                 >
                   <div

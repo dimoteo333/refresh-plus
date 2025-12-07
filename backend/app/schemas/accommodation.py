@@ -29,6 +29,7 @@ class AccommodationResponse(BaseModel):
     capacity: Optional[int] = None
     images: Optional[List[str]] = []
     amenities: Optional[List[str]] = []
+    summary: List[str] = []
     rating: float
     can_book_with_current_score: Optional[bool] = False
     avg_winning_score_4weeks: Optional[int] = 0
@@ -71,6 +72,7 @@ class SearchAccommodationResponse(BaseModel):
     region: str
     accommodation_type: Optional[str] = None
     first_image: Optional[str] = None
+    summary: List[str] = []
     avg_score: Optional[float] = None
     is_wishlisted: bool = False
     notify_enabled: bool = False
@@ -110,6 +112,7 @@ class AccommodationDetailResponse(BaseModel):
     accommodation_type: Optional[str] = None
     capacity: int
     images: List[str] = []
+    summary: List[str] = []
     available_dates: List[AvailableDateResponse] = []
     weekday_averages: List[WeekdayAverageResponse] = []
 
