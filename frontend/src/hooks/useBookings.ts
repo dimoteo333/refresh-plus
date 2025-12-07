@@ -3,29 +3,32 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { bookingApi } from "@/lib/api";
 import { Booking, BookingCreate } from "@/types/booking";
-
-// TODO: 실제 인증 시스템 구현 후 사용자 ID 가져오기
-const getUserId = () => "test-user-id";
+import { useAuth } from "@/contexts/AuthContext";
 
 export function useBookings(status?: string) {
-  const userId = getUserId();
+  const { user, isAuthenticated } = useAuth();
 
   return useQuery({
     queryKey: ["bookings", status],
     queryFn: async () => {
-      const response = await bookingApi.getHistory(userId, { status });
+      // localStorage에서 토큰 가져오기
+      const token = localStorage.getItem("access_token") || "";
+      const response = await bookingApi.getHistory(token, { status });
       return response.data as Booking[];
     },
+    enabled: isAuthenticated, // 로그인한 경우에만 쿼리 실행
   });
 }
 
 export function useCreateBooking() {
-  const userId = getUserId();
+  const { user, isAuthenticated } = useAuth();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (bookingData: BookingCreate) => {
-      const response = await bookingApi.create(userId, bookingData);
+      if (!isAuthenticated) throw new Error("User not authenticated");
+      const token = localStorage.getItem("access_token") || "";
+      const response = await bookingApi.create(token, bookingData);
       return response.data;
     },
     onSuccess: () => {

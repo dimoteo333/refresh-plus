@@ -40,6 +40,9 @@ class Accommodation(Base):
     
     # 숙소 이미지 URL (여러 개) - JSON 배열
     images = Column(JSON, default=list)
+
+    # 숙소 특징 요약 (최대 5개 키워드)
+    summary = Column(JSON, nullable=True, default=list)
     
     # 등록시간
     created_at = Column(DateTime, default=func.now())

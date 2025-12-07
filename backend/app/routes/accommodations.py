@@ -78,7 +78,8 @@ async def get_accommodations(
                 can_book_with_current_score=can_book,
                 avg_winning_score_4weeks=avg_winning_score,
                 availability=acc.available_rooms,
-                rating=acc.rating
+                rating=acc.rating,
+                summary=(acc.summary or [])[:5]
             )
         )
 
@@ -225,6 +226,7 @@ async def get_accommodation_detail(
         price=accommodation.price,
         images=accommodation.images,
         amenities=accommodation.amenities,
+        summary=(accommodation.summary or [])[:5],
         my_score=current_user.current_points,
         can_book=current_user.current_points >= avg_winning_score,
         past_bookings=past_bookings,

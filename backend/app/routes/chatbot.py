@@ -13,7 +13,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/chatbot", tags=["chatbot"])
+# 라우터는 prefix 없이 생성하고, app.include_router에서 /api/chatbot으로 prefix를 붙인다.
+# 기존 prefix가 중복되어 실제 경로가 /api/chatbot/chatbot/* 로 노출되어 404가 발생했다.
+router = APIRouter(tags=["chatbot"])
 
 
 # 스키마
@@ -126,7 +128,7 @@ async def get_chatbot_stats(
     """
     try:
         chatbot_service = get_chatbot_service()
-        stats = chatbot_service.get_stats()
+        stats = await chatbot_service.get_stats()
 
         return {
             "success": True,

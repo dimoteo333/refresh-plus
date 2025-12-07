@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     RAG_TEMPERATURE: float = 0.7
     OPENAI_API_KEY: str | None = None
 
+    # 암호화 설정
+    ENCRYPTION_MASTER_KEY: str | None = None
+    ENCRYPTION_SALT: str | None = None
+    JWT_SECRET_KEY: str | None = None
+
     # Lulu-Lala 크롤링 설정
     LULU_LALA_USERNAME: str | None = None
     LULU_LALA_PASSWORD: str | None = None

@@ -3,9 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { accommodationApi } from "@/lib/api";
 import { Accommodation } from "@/types/accommodation";
-
-// TODO: 실제 인증 시스템 구현 후 사용자 ID 가져오기
-const getUserId = () => "test-user-id";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface UseAccommodationsParams {
   region?: string;
@@ -15,26 +13,29 @@ interface UseAccommodationsParams {
 }
 
 export function useAccommodations(params?: UseAccommodationsParams) {
-  const userId = getUserId();
+  const { isAuthenticated } = useAuth();
 
   return useQuery({
     queryKey: ["accommodations", params],
     queryFn: async () => {
-      const response = await accommodationApi.getAll(userId, params);
+      const token = localStorage.getItem("access_token") || "";
+      const response = await accommodationApi.getAll(token, params);
       return response.data as Accommodation[];
     },
+    enabled: isAuthenticated, // 로그인한 경우에만 쿼리 실행
   });
 }
 
 export function useAccommodationDetail(accommodationId: string) {
-  const userId = getUserId();
+  const { isAuthenticated } = useAuth();
 
   return useQuery({
     queryKey: ["accommodation", accommodationId],
     queryFn: async () => {
-      const response = await accommodationApi.getDetail(userId, accommodationId);
+      const token = localStorage.getItem("access_token") || "";
+      const response = await accommodationApi.getDetail(token, accommodationId);
       return response.data as Accommodation;
     },
-    enabled: !!accommodationId,
+    enabled: !!accommodationId && isAuthenticated, // 숙소 ID와 사용자 모두 있을 때만 실행
   });
 }

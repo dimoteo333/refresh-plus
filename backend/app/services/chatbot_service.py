@@ -2,12 +2,20 @@
 LangGraph 기반 RAG 챗봇 서비스
 FAQ 기반 질의응답 챗봇
 """
+import asyncio
+import csv
 import os
+from pathlib import Path
 from typing import TypedDict, Annotated, Sequence, Optional, Dict, Any
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langgraph.graph import StateGraph, END
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database import AsyncSessionLocal
+from app.models.faq import FAQ
 from app.services.faq_vector_service import get_faq_vector_service
+from app.config import settings
 import logging
 
 logger = logging.getLogger(__name__)
@@ -35,7 +43,7 @@ class ChatbotService:
         초기화
         """
         # OpenAI API 키 확인
-        self.openai_api_key = os.getenv("OPENAI_API_KEY")
+        self.openai_api_key = settings.OPENAI_API_KEY or os.getenv("OPENAI_API_KEY")
         if not self.openai_api_key:
             logger.warning("OPENAI_API_KEY가 설정되지 않았습니다.")
 
@@ -51,6 +59,8 @@ class ChatbotService:
 
         # LangGraph 워크플로우 구성
         self.workflow = self._build_workflow()
+        self._initialized = False
+        self._init_lock = asyncio.Lock()
 
     def _build_workflow(self) -> StateGraph:
         """
@@ -192,6 +202,9 @@ class ChatbotService:
             챗봇 응답 및 메타데이터
         """
         try:
+            # FAQ 데이터 및 벡터 스토어 준비
+            await self._ensure_initialized()
+
             # 초기 상태
             initial_state: ChatbotState = {
                 "messages": [],
@@ -220,14 +233,124 @@ class ChatbotService:
                 "error": str(e)
             }
 
-    def get_stats(self) -> Dict[str, Any]:
+    async def get_stats(self) -> Dict[str, Any]:
         """
         챗봇 통계
 
         Returns:
             통계 정보
         """
+        await self._ensure_initialized()
         return self.faq_vector_service.get_collection_stats()
+
+    async def _ensure_initialized(self) -> None:
+        """
+        FAQ DB 데이터 및 벡터 스토어를 준비한다.
+        - faqs 테이블이 비어 있으면 CSV를 읽어 채운다.
+        - 벡터 스토어에 데이터가 없으면 벡터화한다.
+        """
+        if self._initialized:
+            return
+
+        async with self._init_lock:
+            if self._initialized:
+                return
+
+            try:
+                async with AsyncSessionLocal() as db:
+                    # 현재 FAQ 개수 확인
+                    faq_count_result = await db.execute(select(func.count(FAQ.id)))
+                    faq_count = faq_count_result.scalar() or 0
+
+                    # 필요 시 CSV에서 FAQ 로드
+                    if faq_count == 0:
+                        inserted = await self._import_faqs_from_csv(db)
+                        faq_count = inserted
+                        logger.info(f"CSV에서 {inserted}개의 FAQ를 로드했습니다.")
+                    else:
+                        logger.info(f"이미 {faq_count}개의 FAQ 데이터가 존재합니다.")
+
+                    # 벡터 스토어 상태 확인 후 벡터화
+                    stats = self.faq_vector_service.get_collection_stats()
+                    vector_count = stats.get("total_documents", 0) if stats else 0
+                    if vector_count < faq_count and faq_count > 0:
+                        await self.faq_vector_service.vectorize_all_faqs(db)
+                        logger.info("FAQ 벡터화 완료")
+                    elif vector_count == 0 and faq_count == 0:
+                        logger.warning("FAQ 데이터가 없어 벡터화를 건너뜁니다.")
+                    else:
+                        logger.info(f"벡터 스토어에 {vector_count}개 문서가 이미 존재합니다.")
+
+                self._initialized = True
+            except Exception as e:
+                logger.error(f"챗봇 초기화 실패: {e}")
+                raise
+
+    async def _import_faqs_from_csv(self, db: AsyncSession) -> int:
+        """
+        FAQ CSV를 읽어 DB에 채운다.
+
+        Args:
+            db: DB 세션
+
+        Returns:
+            추가된 FAQ 개수
+        """
+        base_dir = Path(__file__).resolve().parents[2]  # backend 디렉토리
+        csv_path = base_dir / "docs" / "faq.csv"
+
+        if not csv_path.exists():
+            logger.warning(f"FAQ CSV 파일을 찾을 수 없습니다: {csv_path}")
+            return 0
+
+        # UTF-8 BOM 우선, 실패 시 CP949로 재시도
+        encodings_to_try = ["utf-8-sig", "cp949"]
+        rows = None
+        for enc in encodings_to_try:
+            try:
+                with csv_path.open("r", encoding=enc, newline="") as f:
+                    rows = list(csv.DictReader(f))
+                break
+            except UnicodeDecodeError:
+                continue
+
+        if rows is None:
+            logger.error("FAQ CSV를 읽을 수 없습니다. 인코딩을 확인하세요.")
+            return 0
+
+        faqs_to_add = []
+        for idx, row in enumerate(rows):
+            question = (row.get("question") or "").strip()
+            answer = (row.get("answer") or "").strip()
+            if not question or not answer:
+                logger.warning(f"{idx+1}번째 행에 질문/답변이 없어 건너뜁니다.")
+                continue
+
+            raw_id = (row.get("id") or "").strip()
+            faq_id = raw_id if raw_id else str(idx + 1)
+            category = (row.get("category") or None) or None
+            order_raw = (row.get("order") or "").strip()
+            try:
+                order_val = int(order_raw) if order_raw else idx + 1
+            except ValueError:
+                order_val = idx + 1
+
+            faq = FAQ(
+                id=faq_id,
+                question=question,
+                answer=answer,
+                category=category,
+                order=order_val,
+            )
+            faqs_to_add.append(faq)
+
+        if not faqs_to_add:
+            logger.warning("CSV에서 유효한 FAQ 데이터를 찾지 못했습니다.")
+            return 0
+
+        db.add_all(faqs_to_add)
+        await db.commit()
+        return len(faqs_to_add)
 
 
 # 싱글톤 인스턴스

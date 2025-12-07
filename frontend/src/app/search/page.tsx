@@ -2,13 +2,16 @@
 
 import { useState, useEffect } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { MapPin, Search, Heart, Bell, BellOff } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import BottomNav from "@/components/layout/BottomNav";
 import { accommodationApi, wishlistApi } from "@/lib/api";
 import { SearchAccommodation } from "@/types/accommodation";
 
 export default function SearchPage() {
+  const router = useRouter();
   const [keyword, setKeyword] = useState("");
   const [searchResults, setSearchResults] = useState<SearchAccommodation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -124,7 +127,8 @@ export default function SearchPage() {
               searchResults.map((accommodation) => (
                 <Card
                   key={accommodation.id}
-                  className="relative overflow-hidden border-sky-100/80 bg-white/80 shadow-sm backdrop-blur transition-shadow hover:shadow-md"
+                  onClick={() => router.push(`/accommodations/${accommodation.id}`)}
+                  className="relative cursor-pointer overflow-hidden border-sky-100/80 bg-white/80 shadow-sm backdrop-blur transition-shadow hover:shadow-md"
                 >
                   {/* 숙소 이미지 */}
                   <div className="relative h-48 w-full overflow-hidden bg-gradient-to-br from-sky-100 to-blue-100">
@@ -150,12 +154,13 @@ export default function SearchPage() {
                     {/* 즐겨찾기 & 알림 버튼 (우측 상단) */}
                     <div className="absolute right-3 top-3 flex gap-2">
                       <button
-                        onClick={() =>
+                        onClick={(e) => {
+                          e.stopPropagation();
                           handleWishlistToggle(
                             accommodation.id,
                             accommodation.is_wishlisted
-                          )
-                        }
+                          );
+                        }}
                         className={`rounded-full p-2 shadow-sm backdrop-blur-sm transition ${
                           accommodation.is_wishlisted
                             ? "bg-red-500 text-white"
@@ -170,6 +175,7 @@ export default function SearchPage() {
                       </button>
                       {accommodation.is_wishlisted && (
                         <button
+                          onClick={(e) => e.stopPropagation()}
                           className={`rounded-full p-2 shadow-sm backdrop-blur-sm transition ${
                             accommodation.notify_enabled
                               ? "bg-blue-500 text-white"
@@ -194,6 +200,19 @@ export default function SearchPage() {
                     <p className="mt-1 text-xs text-slate-600">
                       {accommodation.accommodation_type || "숙소"}
                     </p>
+
+                    {accommodation.summary && accommodation.summary.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {accommodation.summary.slice(0, 5).map((item, index) => (
+                          <Badge
+                            key={`${accommodation.id}-summary-${index}`}
+                            className="bg-sky-100 text-sky-800 hover:bg-sky-100"
+                          >
+                            {item}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
 
                     {/* 평균 점수 */}
                     {accommodation.avg_score !== null &&

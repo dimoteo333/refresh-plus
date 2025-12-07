@@ -160,6 +160,7 @@ class AccommodationService:
 
             # 첫 번째 이미지 추출
             first_image = accommodation.images[0] if accommodation.images else None
+            summary = (accommodation.summary or [])[:5]
 
             search_results.append({
                 "id": accommodation.id,
@@ -167,6 +168,7 @@ class AccommodationService:
                 "region": accommodation.region,
                 "accommodation_type": accommodation.accommodation_type,
                 "first_image": first_image,
+                "summary": summary,
                 "avg_score": round(avg_score, 1) if avg_score else None,
                 "is_wishlisted": is_wishlisted,
                 "notify_enabled": notify_enabled
@@ -290,6 +292,7 @@ class AccommodationService:
             "accommodation_type": accommodation.accommodation_type,
             "capacity": accommodation.capacity,
             "images": accommodation.images or [],
+            "summary": (accommodation.summary or [])[:5],
             "available_dates": available_dates,
             "weekday_averages": weekday_averages
         }

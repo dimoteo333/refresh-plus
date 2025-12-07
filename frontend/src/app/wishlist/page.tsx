@@ -1,13 +1,17 @@
+"use client";
+
 import Image from "next/image";
 import {
   AlarmCheck,
   Bell,
   Flame,
   Heart,
+  Loader2,
   MapPin,
   ShieldCheck,
   Sparkles,
   Star,
+  X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -17,30 +21,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import BottomNav from "@/components/layout/BottomNav";
-
-const favorites = [
-  {
-    name: "제주 바다뷰 리조트",
-    location: "제주 애월 | 오션뷰",
-    score: "평균 당첨 78점",
-    status: "알림 ON",
-    tag: "주말 인기",
-  },
-  {
-    name: "강릉 포인트 호텔",
-    location: "강릉 역세권 | 조식 포함",
-    score: "평균 당첨 65점",
-    status: "대기 가능",
-    tag: "패밀리",
-  },
-  {
-    name: "부산 오션 라운지",
-    location: "해운대 | 루프탑",
-    score: "평균 당첨 82점",
-    status: "알림 ON",
-    tag: "야경",
-  },
-];
+import { useWishlist } from "@/hooks/useWishlist";
+import { useAuth } from "@/contexts/AuthContext";
 
 const alertRules = [
   { title: "평균 점수 도달", desc: "내 점수 이상 확보 시 푸시", icon: Star },
@@ -49,6 +31,24 @@ const alertRules = [
 ];
 
 export default function WishlistPage() {
+  const { user, isLoading: authLoading } = useAuth();
+  const { wishlist, removeFromWishlist, isLoading: wishlistLoading } = useWishlist();
+
+  const handleRemove = async (accommodationId: string) => {
+    try {
+      await removeFromWishlist(accommodationId);
+    } catch (error) {
+      console.error("Failed to remove from wishlist:", error);
+    }
+  };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-sky-600" />
+      </div>
+    );
+  }
   return (
     <div className="min-h-screen bg-gradient-to-b from-sky-50 via-blue-50/70 to-white text-gray-900">
       <div className="mx-auto flex min-h-screen max-w-5xl flex-col px-4 pb-28 pt-6 sm:px-6 lg:px-8">
@@ -70,7 +70,7 @@ export default function WishlistPage() {
           </div>
           <Badge className="bg-white/80 text-sky-700 shadow-sm">
             <Heart className="mr-1 h-3.5 w-3.5 fill-sky-500 text-sky-500" />
-            3곳 찜
+            {wishlist.length}곳 찜
           </Badge>
         </header>
 
@@ -91,38 +91,70 @@ export default function WishlistPage() {
             </div>
 
             <div className="mt-5 grid gap-4 sm:grid-cols-3">
-              {favorites.map((item) => (
-                <Card
-                  key={item.name}
-                  className="border-sky-100/70 bg-gradient-to-br from-white to-sky-50/70 shadow-sm"
-                >
-                  <CardHeader className="flex flex-row items-start gap-3 space-y-0">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-100 text-sky-700">
-                      <MapPin className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-base text-slate-900">{item.name}</CardTitle>
-                      <p className="text-xs text-slate-600">{item.location}</p>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-3 pt-0">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-800">{item.score}</span>
-                      <span className="text-xs text-sky-700">{item.status}</span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="secondary" className="bg-sky-50 text-sky-700">
-                        <Flame className="mr-1 h-3.5 w-3.5 text-orange-500" />
-                        {item.tag}
-                      </Badge>
-                      <Badge className="bg-blue-600 text-white">
-                        <Bell className="mr-1 h-3.5 w-3.5" />
-                        알림 유지
-                      </Badge>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+              {wishlistLoading ? (
+                <div className="col-span-3 flex justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-sky-600" />
+                </div>
+              ) : wishlist.length === 0 ? (
+                <div className="col-span-3 py-8 text-center text-slate-600">
+                  <Heart className="h-12 w-12 mx-auto mb-2 text-slate-400" />
+                  <p>즐겨찾기한 숙소가 없습니다</p>
+                  <p className="text-sm mt-1">마음에 드는 숙소를 찾아 하트를 눌러보세요</p>
+                </div>
+              ) : (
+                wishlist.map((item: any) => (
+                  <Card
+                    key={item.id}
+                    className="border-sky-100/70 bg-gradient-to-br from-white to-sky-50/70 shadow-sm relative"
+                  >
+                    <button
+                      onClick={() => handleRemove(item.accommodation_id)}
+                      className="absolute top-3 right-3 h-8 w-8 rounded-full bg-white/80 hover:bg-white flex items-center justify-center transition-colors shadow-sm"
+                      aria-label="Remove from wishlist"
+                    >
+                      <X className="h-4 w-4 text-slate-600" />
+                    </button>
+                    <CardHeader className="flex flex-row items-start gap-3 space-y-0 pr-12">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-100 text-sky-700">
+                        <MapPin className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-base text-slate-900">
+                          {item.accommodation?.name || "숙소 정보 없음"}
+                        </CardTitle>
+                        <p className="text-xs text-slate-600">
+                          {item.accommodation?.location || "위치 정보 없음"}
+                        </p>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-3 pt-0">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-slate-800">
+                          {item.accommodation?.avg_winning_score
+                            ? `평균 당첨 ${item.accommodation.avg_winning_score}점`
+                            : "점수 정보 없음"}
+                        </span>
+                        <span className="text-xs text-sky-700">
+                          {item.notify_when_bookable ? "알림 ON" : "알림 OFF"}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {item.accommodation?.tags?.slice(0, 2).map((tag: string) => (
+                          <Badge key={tag} variant="secondary" className="bg-sky-50 text-sky-700">
+                            #{tag}
+                          </Badge>
+                        ))}
+                        {item.notify_when_bookable && (
+                          <Badge className="bg-blue-600 text-white">
+                            <Bell className="mr-1 h-3.5 w-3.5" />
+                            알림 유지
+                          </Badge>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
             </div>
           </section>
 
