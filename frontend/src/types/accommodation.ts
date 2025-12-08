@@ -35,6 +35,14 @@ export interface PopularAccommodation {
   score: number;
 }
 
+export interface SOLRecommendedAccommodation {
+  id: string;
+  name: string;
+  region: string;
+  first_image?: string;
+  average_sol_score: number;
+}
+
 export interface SearchAccommodation {
   id: string;
   name: string;
@@ -44,6 +52,7 @@ export interface SearchAccommodation {
   summary?: string[];
   avg_score?: number;
   avg_price?: number;
+  sol_score?: number;
   is_wishlisted: boolean;
   notify_enabled: boolean;
   // 날짜별 정보 (date 파라미터 제공 시)

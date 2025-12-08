@@ -10,12 +10,13 @@ import json
 import re
 from datetime import datetime, date as date_obj
 from typing import List, Dict, Optional, Set, Tuple
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete, or_
 from app.database import AsyncSessionLocal
 from app.models.accommodation import Accommodation
 from app.models.today_accommodation import TodayAccommodation
 from app.config import settings
 from app.utils.logger import get_logger
+from app.utils.sol_score import calculate_sol_scores_for_today_accommodation
 from playwright.async_api import async_playwright, Browser, Page, BrowserContext
 
 logger = get_logger(__name__)
@@ -24,6 +25,7 @@ logger = get_logger(__name__)
 LULU_LALA_LOGIN_URL = "https://lulu-lala.zzzmobile.co.kr/login.html"
 # 숙소 조회 URL
 SHB_REFRESH_INTRO_URL = "https://shbrefresh.interparkb2b.co.kr/intro"
+SHB_REFRESH_INDEX_URL = "https://shbrefresh.interparkb2b.co.kr/index"
 
 
 def encrypt_rsa(plaintext: str, public_key_pem: str) -> str:
@@ -178,6 +180,7 @@ async def navigate_to_reservation_page(page: Page, context: BrowserContext) -> t
 
         pages_before = len(context.pages)
         shbrefresh_page = None
+        shbrefresh_detected = False
 
         def handle_new_page(new_page):
             nonlocal shbrefresh_page
@@ -209,6 +212,7 @@ async def navigate_to_reservation_page(page: Page, context: BrowserContext) -> t
                 await shbrefresh_page.wait_for_load_state("networkidle", timeout=10000)
                 await shbrefresh_page.wait_for_timeout(2000)
                 page = shbrefresh_page
+                shbrefresh_detected = True
                 logger.info(f"Switched to shbrefresh page: {page.url}")
                 break
 
@@ -216,6 +220,7 @@ async def navigate_to_reservation_page(page: Page, context: BrowserContext) -> t
             if "shbrefresh" in current_url.lower() or "interparkb2b" in current_url.lower():
                 if "error" not in current_url.lower() and "login" not in current_url.lower():
                     logger.info(f"Reached shbrefresh page: {current_url}")
+                    shbrefresh_detected = True
                     break
 
             if len(context.pages) > pages_before:
@@ -226,62 +231,30 @@ async def navigate_to_reservation_page(page: Page, context: BrowserContext) -> t
                             if "error" not in p_url.lower() and "login" not in p_url.lower():
                                 await p.wait_for_load_state("networkidle", timeout=10000)
                                 page = p
+                                shbrefresh_detected = True
                                 logger.info(f"Switched to new shbrefresh tab: {page.url}")
                                 break
                     except:
                         continue
+                if shbrefresh_detected:
+                    break
 
             if waited % 5 == 0:
                 logger.debug(f"Waiting for shbrefresh page... ({waited}/{max_wait}s)")
 
-        logger.info("Looking for RESERVATION button on shbrefresh page...")
-        await page.wait_for_timeout(2000)
+        if not shbrefresh_detected:
+            logger.error("Failed to detect shbrefresh page; cannot proceed to reservation index")
+            return False, page
 
-        reservation_element = None
-        frames = page.frames
-        search_pages = [page] + list(frames)
-
-        for search_page in search_pages:
-            try:
-                elements = await search_page.query_selector_all(
-                    "button, a, [role='button'], [onclick], [class*='btn'], [class*='button'], [class*='menu']"
-                )
-
-                for element in elements:
-                    try:
-                        text = await element.inner_text() if hasattr(element, 'inner_text') else ""
-                        if not text:
-                            text = await element.text_content() if hasattr(element, 'text_content') else ""
-
-                        class_name = await element.get_attribute("class") or ""
-                        combined = f"{text} {class_name}".upper()
-
-                        if "RESERVATION" in combined:
-                            logger.info(f"Found RESERVATION element: {text[:50]}")
-                            reservation_element = element
-                            break
-                    except:
-                        continue
-
-                if reservation_element:
-                    break
-            except:
-                continue
-
-        if not reservation_element:
-            logger.warning("RESERVATION button not found, trying to proceed anyway...")
-            return True, page
-
-        logger.info("Clicking RESERVATION button...")
         try:
-            await reservation_element.click()
-        except:
-            await reservation_element.evaluate("el => el.click()")
-
-        await page.wait_for_timeout(3000)
-
-        logger.info(f"Successfully navigated to reservation page: {page.url}")
-        return True, page
+            logger.info("Navigating directly to shbrefresh reservation index via SSO...")
+            await page.goto(SHB_REFRESH_INDEX_URL, wait_until="networkidle", timeout=20000)
+            await page.wait_for_timeout(2000)
+            logger.info(f"Successfully reached reservation index: {page.url}")
+            return True, page
+        except Exception as nav_error:
+            logger.error(f"Error navigating directly to reservation index: {str(nav_error)}", exc_info=True)
+            return False, page
 
     except Exception as e:
         logger.error(f"Error navigating to reservation page: {str(e)}", exc_info=True)
@@ -336,6 +309,30 @@ async def get_existing_today_accommodations() -> List[Tuple[str, str]]:
         except Exception as e:
             logger.error(f"Error fetching existing TodayAccommodation records: {str(e)}")
             return []
+
+
+async def cleanup_outdated_today_accommodations(batch_date: date_obj) -> int:
+    """
+    updated_at 날짜가 배치 실행 일자와 다른 레코드 삭제
+    """
+    async with AsyncSessionLocal() as db:
+        try:
+            batch_date_str = batch_date.isoformat()
+            stmt = delete(TodayAccommodation).where(
+                or_(
+                    TodayAccommodation.updated_at.is_(None),
+                    func.date(TodayAccommodation.updated_at) != batch_date_str
+                )
+            )
+            result = await db.execute(stmt)
+            await db.commit()
+            deleted_rows = result.rowcount or 0
+            logger.info(f"Cleanup completed - removed {deleted_rows} rows not matching {batch_date_str}")
+            return deleted_rows
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Error during cleanup for batch date {batch_date.isoformat()}: {str(e)}")
+            raise
 
 
 async def crawl_bookable_dates_for_accommodation(
@@ -500,53 +497,67 @@ async def crawl_bookable_dates_for_accommodation(
 async def crawl_realtime_info_for_date(
     page: Page,
     accommodation_id: str,
-    target_date: str
-) -> Optional[Dict]:
+    target_date: str = None
+) -> List[Dict]:
     """
-    특정 숙소의 특정 날짜에 대한 실시간 정보 크롤링
+    특정 숙소의 모든 예약 가능한 날짜에 대한 실시간 정보 크롤링
+
+    Args:
+        page: Playwright page object
+        accommodation_id: 숙소 ID
+        target_date: (Deprecated) 하위 호환성을 위해 유지, 사용되지 않음
 
     Returns:
-        Dict: {
-            "date": "YYYY-MM-DD",
-            "status": str,
-            "score": float,
-            "applicants": int
-        }
+        List[Dict]: 날짜별 정보 리스트
+        [
+            {
+                "date": "YYYY-MM-DD",
+                "status": str,
+                "score": float,
+                "applicants": int
+            },
+            ...
+        ]
     """
     try:
         acc_url = f"https://shbrefresh.interparkb2b.co.kr/condo/{accommodation_id}"
-        logger.info(f"Crawling realtime info for {accommodation_id} on {target_date}")
+        logger.info(f"Crawling all bookable dates for accommodation {accommodation_id}")
 
         await page.goto(acc_url, wait_until="networkidle", timeout=30000)
         await page.wait_for_timeout(2000)
 
-        logger.info(f"  Looking for date {target_date} using data-rblockdate attribute...")
+        logger.info(f"  Looking for bookable dates using calendar_table and rm_always classes...")
 
-        # calendar 클래스 또는 data-role="roomInfo" 요소 찾기
-        room_info_elements = await page.query_selector_all('[data-role="roomInfo"]')
+        # calendar_table 클래스에서 rm_always 클래스 찾기
+        calendar_table = await page.query_selector('.calendar_table, [class*="calendar_table"]')
 
-        if not room_info_elements:
-            # 대안: calendar 클래스 내부에서 찾기
-            calendars = await page.query_selector_all('.calendar, [class*="calendar"]')
-            for calendar in calendars:
-                room_info_elements.extend(await calendar.query_selector_all('[data-role="roomInfo"]'))
+        if not calendar_table:
+            logger.warning("  calendar_table not found")
+            return []
 
-        logger.info(f"  Found {len(room_info_elements)} room info elements")
+        rm_always_elements = await calendar_table.query_selector_all('.rm_always, [class*="rm_always"]')
+        logger.info(f"  Found {len(rm_always_elements)} rm_always elements (bookable dates)")
 
-        for room_info in room_info_elements:
+        bookable_dates = []
+        for rm_always in rm_always_elements:
             try:
-                # data-rblockdate 속성에서 날짜 추출
-                date_str = await room_info.get_attribute("data-rblockdate")
-                if not date_str or date_str != target_date:
+                # rm_always 내부의 <a> 태그에서 data-rblockdate 추출
+                link_element = await rm_always.query_selector('a')
+                if not link_element:
+                    logger.debug(f"    No <a> tag found in rm_always element")
                     continue
 
-                # 타겟 날짜 발견!
-                logger.info(f"    Found target date {target_date}")
+                date_str = await link_element.get_attribute("data-rblockdate")
+                if not date_str:
+                    continue
+
+                # 날짜 발견!
+                logger.info(f"    Processing date: {date_str}")
 
                 # room_status 요소 찾기
-                room_status_element = await room_info.query_selector(".room_status, [class*='room_status']")
+                room_status_element = await rm_always.query_selector(".room_status, [class*='room_status']")
                 if not room_status_element:
-                    room_status_element = room_info
+                    room_status_element = rm_always
 
                 room_status_html = await room_status_element.inner_html()
                 room_status_text = await room_status_element.inner_text()
@@ -569,7 +580,7 @@ async def crawl_realtime_info_for_date(
                 sangsi_score = 0.0  # 상시 점수
 
                 # data-first-room-score 속성에서 최초 점수 추출
-                first_score_attr = await room_info.get_attribute("data-first-room-score")
+                first_score_attr = await link_element.get_attribute("data-first-room-score")
                 if first_score_attr and first_score_attr.strip():
                     try:
                         choi_score = float(first_score_attr)
@@ -577,7 +588,7 @@ async def crawl_realtime_info_for_date(
                         pass
 
                 # data-permanent-room-score 속성에서 상시 점수 추출
-                permanent_score_attr = await room_info.get_attribute("data-permanent-room-score")
+                permanent_score_attr = await link_element.get_attribute("data-permanent-room-score")
                 if permanent_score_attr and permanent_score_attr.strip():
                     try:
                         sangsi_score = float(permanent_score_attr)
@@ -607,7 +618,7 @@ async def crawl_realtime_info_for_date(
 
                 # 인원 추출 (data 속성 우선, 없으면 HTML 파싱)
                 applicants = 0
-                apply_count_attr = await room_info.get_attribute("data-apply-count")
+                apply_count_attr = await link_element.get_attribute("data-apply-count")
                 if apply_count_attr and apply_count_attr.strip():
                     try:
                         applicants = int(apply_count_attr)
@@ -628,31 +639,31 @@ async def crawl_realtime_info_for_date(
                             applicants = int(match.group(1))
                             break
 
-                logger.info(f"    ✓ {target_date}: {status}, {score}점 (최초: {choi_score}, 상시: {sangsi_score}), {applicants}명")
+                logger.info(f"    ✓ {date_str}: {status}, {score}점 (최초: {choi_score}, 상시: {sangsi_score}), {applicants}명")
 
-                return {
-                    "date": target_date,
+                bookable_dates.append({
+                    "date": date_str,
                     "status": status,
                     "score": score,
                     "applicants": applicants
-                }
+                })
 
             except Exception as e:
                 logger.debug(f"Error processing room info: {str(e)}")
                 continue
 
-        logger.warning(f"  Could not find realtime info for {accommodation_id} on {target_date}")
-        return None
+        logger.info(f"  Found {len(bookable_dates)} bookable dates for accommodation {accommodation_id}")
+        return bookable_dates
 
     except Exception as e:
-        logger.warning(f"Error crawling realtime info for {accommodation_id} on {target_date}: {str(e)}")
-        return None
+        logger.warning(f"Error crawling realtime info for {accommodation_id}: {str(e)}")
+        return []
 
 
 async def save_today_accommodations_to_db(
     accommodation_id: str,
     dates_info: List[Dict]
-):
+) -> Tuple[int, int]:
     """
     오늘자 숙소 정보를 DB에 저장/업데이트
     """
@@ -709,13 +720,15 @@ async def save_today_accommodations_to_db(
                         accommodation_id=accommodation_id,
                         applicants=date_info.get("applicants", 0),
                         score=date_info.get("score", 0.0),
-                        status=date_info.get("status", "Unknown")
+                        status=date_info.get("status", "Unknown"),
+                        updated_at=datetime.utcnow()
                     )
                     db.add(new_today)
                     saved += 1
 
             await db.commit()
             logger.info(f"  DB save - Saved: {saved}, Updated: {updated}")
+            return saved, updated
 
         except Exception as e:
             await db.rollback()
@@ -761,6 +774,9 @@ async def process_today_accommodation_realtime(
             "timestamp": datetime.utcnow().isoformat()
         }
 
+    batch_date = datetime.utcnow().date()
+    batch_date_str = batch_date.isoformat()
+
     async with async_playwright() as p:
         browser: Browser = None
         context: BrowserContext = None
@@ -771,8 +787,12 @@ async def process_today_accommodation_realtime(
             logger.info("Starting today accommodation realtime update batch job...")
             logger.info("=" * 60)
 
-            # DB 상태 확인
-            is_empty = await check_if_today_accommodation_empty()
+            # Cleanup outdated data before loading new ones
+            logger.info("=" * 60)
+            logger.info(f"STEP 0: Cleaning up data not updated on {batch_date_str} ...")
+            logger.info("=" * 60)
+            cleaned_rows = await cleanup_outdated_today_accommodations(batch_date)
+            logger.info(f"✓ Cleanup complete. Removed {cleaned_rows} stale rows.")
 
             # 브라우저 시작
             browser = await p.chromium.launch(headless=True)
@@ -817,96 +837,66 @@ async def process_today_accommodation_realtime(
             total_saved = 0
             total_updated = 0
 
-            if is_empty:
-                # 최초 실행: 모든 숙소의 신청가능 날짜 크롤링
-                logger.info("=" * 60)
-                logger.info("STEP 3: Initial crawl - Finding bookable dates for all accommodations")
-                logger.info("=" * 60)
+            logger.info("=" * 60)
+            logger.info(f"STEP 3: Crawling realtime info for batch date {batch_date_str}")
+            logger.info("=" * 60)
 
-                accommodation_ids = await get_all_accommodation_ids()
+            accommodation_ids = await get_all_accommodation_ids()
 
-                if not accommodation_ids:
-                    logger.warning("No accommodations found in database")
-                    return {
-                        "status": "warning",
-                        "message": "No accommodations found",
-                        "timestamp": datetime.utcnow().isoformat()
-                    }
+            if not accommodation_ids:
+                logger.warning("No accommodations found in database")
+                return {
+                    "status": "warning",
+                    "message": "No accommodations found",
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "batch_date": batch_date_str,
+                    "cleaned_rows": cleaned_rows
+                }
 
-                logger.info(f"Processing {len(accommodation_ids)} accommodations...")
+            logger.info(f"Processing {len(accommodation_ids)} accommodations for {batch_date_str}...")
 
-                for idx, acc_id in enumerate(accommodation_ids, 1):
-                    logger.info(f"[{idx}/{len(accommodation_ids)}] Processing accommodation {acc_id}")
+            for idx, acc_id in enumerate(accommodation_ids, 1):
+                logger.info(f"[{idx}/{len(accommodation_ids)}] Processing accommodation {acc_id}")
 
-                    try:
-                        bookable_dates = await crawl_bookable_dates_for_accommodation(page, acc_id)
+                try:
+                    dates_info = await crawl_realtime_info_for_date(page, acc_id)
 
-                        if bookable_dates:
-                            await save_today_accommodations_to_db(acc_id, bookable_dates)
-                            total_processed += 1
-                            total_saved += len(bookable_dates)
+                    if dates_info:
+                        saved, updated = await save_today_accommodations_to_db(acc_id, dates_info)
+                        total_processed += 1
+                        total_saved += saved
+                        total_updated += updated
+                    else:
+                        logger.info(f"  No bookable dates found for accommodation {acc_id}")
 
-                        # 과부하 방지를 위한 짧은 대기
-                        await page.wait_for_timeout(1000)
+                    # 과부하 방지를 위한 짧은 대기
+                    await page.wait_for_timeout(1000)
 
-                    except Exception as e:
-                        logger.warning(f"Error processing accommodation {acc_id}: {str(e)}")
-                        continue
+                except Exception as e:
+                    logger.warning(f"Error processing accommodation {acc_id}: {str(e)}")
+                    continue
 
-                logger.info(f"Initial crawl completed: {total_processed} accommodations, {total_saved} dates")
+            logger.info(
+                f"Crawl completed for {batch_date_str}: "
+                f"{total_processed} accommodations, saved {total_saved}, updated {total_updated}"
+            )
 
-            else:
-                # 반복 실행: 기존 데이터 업데이트
-                logger.info("=" * 60)
-                logger.info("STEP 3: Update crawl - Refreshing existing records")
-                logger.info("=" * 60)
-
-                existing_records = await get_existing_today_accommodations()
-
-                if not existing_records:
-                    logger.warning("No existing records to update")
-                    return {
-                        "status": "warning",
-                        "message": "No existing records to update",
-                        "timestamp": datetime.utcnow().isoformat()
-                    }
-
-                logger.info(f"Updating {len(existing_records)} existing records...")
-
-                # accommodation_id별로 그룹화
-                from collections import defaultdict
-                acc_dates_map = defaultdict(list)
-                for acc_id, date_str in existing_records:
-                    acc_dates_map[acc_id].append(date_str)
-
-                for idx, (acc_id, dates) in enumerate(acc_dates_map.items(), 1):
-                    logger.info(f"[{idx}/{len(acc_dates_map)}] Updating accommodation {acc_id} ({len(dates)} dates)")
-
-                    try:
-                        updated_dates = []
-
-                        for date_str in dates:
-                            date_info = await crawl_realtime_info_for_date(page, acc_id, date_str)
-                            if date_info:
-                                updated_dates.append(date_info)
-
-                        if updated_dates:
-                            await save_today_accommodations_to_db(acc_id, updated_dates)
-                            total_processed += 1
-                            total_updated += len(updated_dates)
-
-                        # 과부하 방지
-                        await page.wait_for_timeout(1000)
-
-                    except Exception as e:
-                        logger.warning(f"Error updating accommodation {acc_id}: {str(e)}")
-                        continue
-
-                logger.info(f"Update crawl completed: {total_processed} accommodations, {total_updated} dates")
+            # SOL점수 계산 및 업데이트
+            logger.info("=" * 50)
+            logger.info("Calculating SOL scores for today accommodations...")
+            logger.info("=" * 50)
+            async with AsyncSessionLocal() as db:
+                sol_stats = await calculate_sol_scores_for_today_accommodation(db)
+                logger.info(f"✓ SOL score calculation completed:")
+                logger.info(f"  - Total records: {sol_stats['total']}")
+                logger.info(f"  - Calculated: {sol_stats['calculated']}")
+                logger.info(f"  - Skipped: {sol_stats['skipped']}")
 
             return {
                 "status": "success",
-                "mode": "initial" if is_empty else "update",
+                "mode": "daily",
+                "batch_date": batch_date_str,
+                "cleaned_rows": cleaned_rows,
                 "accommodations_processed": total_processed,
                 "dates_saved": total_saved,
                 "dates_updated": total_updated,

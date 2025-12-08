@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { Heart, MapPin, Calendar, Bell, BellOff, Trash2, CalendarPlus } from "lucide-react";
 import { useWishlist } from "@/hooks/useWishlist";
 import { useAuth } from "@/contexts/AuthContext";
@@ -70,14 +71,28 @@ export default function WishlistPage() {
     }
   };
 
-  const handleToggleNotification = async (item: Wishlist) => {
+  const handleToggleNotification = async (accommodationId: string) => {
     try {
-      await updateWishlist({
-        id: item.id,
-        data: {
-          notify_enabled: !item.notify_enabled,
-        },
-      });
+      // 해당 숙소의 모든 날짜별 wishlist 조회
+      const accommodationWishlists = wishlist.filter(
+        (w: Wishlist) => w.accommodation_id === accommodationId
+      );
+
+      // 현재 알림 상태 확인 (하나라도 true면 모두 false로, 모두 false면 모두 true로)
+      const hasEnabledNotification = accommodationWishlists.some((w: Wishlist) => w.notify_enabled);
+      const newNotifyState = !hasEnabledNotification;
+
+      // 모든 wishlist 항목에 대해 일괄 업데이트
+      await Promise.all(
+        accommodationWishlists.map((w: Wishlist) =>
+          updateWishlist({
+            id: w.id,
+            data: {
+              notify_enabled: newNotifyState,
+            },
+          })
+        )
+      );
     } catch (err: any) {
       alert(err.response?.data?.detail || "알림 설정 변경 중 오류가 발생했습니다.");
     }
@@ -115,10 +130,10 @@ export default function WishlistPage() {
       const currentDates = currentDateWishlists.map((w: Wishlist) => w.desired_date!);
 
       // 삭제할 날짜들 (현재 있는데 새로 선택 안된 것들)
-      const datesToRemove = currentDates.filter((d) => !dates.includes(d));
+      const datesToRemove = currentDates.filter((d: string) => !dates.includes(d));
 
       // 추가할 날짜들 (새로 선택된 것 중 현재 없는 것들)
-      const datesToAdd = dates.filter((d) => !currentDates.includes(d));
+      const datesToAdd = dates.filter((d: string) => !currentDates.includes(d));
 
       // 삭제 처리
       for (const date of datesToRemove) {
@@ -148,168 +163,205 @@ export default function WishlistPage() {
       .sort();
   };
 
+  // 숙소별로 그룹화하여 중복 제거
+  const getUniqueAccommodations = (): Wishlist[] => {
+    const accommodationMap = new Map<string, Wishlist>();
+
+    wishlist.forEach((item: Wishlist) => {
+      if (!accommodationMap.has(item.accommodation_id)) {
+        accommodationMap.set(item.accommodation_id, item);
+      }
+    });
+
+    return Array.from(accommodationMap.values());
+  };
+
+  // 해당 숙소의 알림 상태 확인 (하나라도 알림이 켜져 있으면 true)
+  const isNotificationEnabled = (accommodationId: string): boolean => {
+    return wishlist
+      .filter((w: Wishlist) => w.accommodation_id === accommodationId)
+      .some((w: Wishlist) => w.notify_enabled);
+  };
+
   if (authLoading || !isAuthenticated) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">로그인 확인 중...</p>
+      <div className="min-h-screen bg-gradient-to-b from-sky-50 via-blue-50/70 to-white flex items-center justify-center">
+        <div className="text-center text-slate-700">
+          <div className="mx-auto h-12 w-12 animate-spin rounded-full border-b-2 border-sky-600"></div>
+          <p className="mt-4 text-sm">로그인 확인 중...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-32">
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+    <div className="min-h-screen bg-gradient-to-b from-sky-50 via-blue-50/70 to-white text-gray-900">
+      <div className="mx-auto flex min-h-screen max-w-5xl flex-col px-4 pb-28 pt-6 sm:px-6 lg:px-8">
+        <header className="flex items-center justify-between gap-3 px-1 py-2 sm:px-2">
           <div className="flex items-center gap-3">
-            <Heart className="h-6 w-6 text-red-500" />
-            <h1 className="text-2xl font-bold text-gray-900">찜한 숙소</h1>
+            <div className="relative h-12 w-12 overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-sm">
+              <Image
+                src="/images/sol_standing.png"
+                alt="SOL 스탠딩 로고"
+                width={48}
+                height={57}
+                className="h-full w-full object-contain p-1"
+              />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-sky-700">찜한 숙소</p>
+              <p className="text-xs text-gray-600">즐겨찾기 · 알림 관리</p>
+            </div>
           </div>
           {wishlist && wishlist.length > 0 && (
-            <p className="mt-2 text-sm text-gray-600">총 {wishlist.length}개의 숙소</p>
+            <Badge className="bg-sky-100 text-sky-800">
+              총 {getUniqueAccommodations().length}개
+            </Badge>
           )}
-        </div>
-      </div>
+        </header>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {isLoading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          </div>
-        ) : wishlist && wishlist.length === 0 ? (
-          <div className="text-center py-12">
-            <Heart className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">찜한 숙소가 없습니다</h2>
-            <p className="text-gray-600 mb-6">마음에 드는 숙소를 찜해보세요!</p>
-            <button
-              onClick={() => router.push("/search")}
-              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-            >
-              숙소 둘러보기
-            </button>
-          </div>
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {wishlist.map((item: Wishlist) => {
-              const accommodation = accommodationDetails[item.accommodation_id];
+        <main className="mt-6 flex flex-1 flex-col gap-6">
+          <section className="rounded-3xl border border-sky-100/70 bg-white/80 p-5 shadow-lg backdrop-blur-lg sm:p-6">
+            <div className="flex items-center justify-between gap-3">
+            </div>
 
-              return (
-                <div
-                  key={item.id}
-                  className="bg-white rounded-lg shadow-sm overflow-hidden hover:shadow-md transition"
-                >
-                  <div
-                    className="relative h-48 bg-gray-200 cursor-pointer"
-                    onClick={() => router.push(`/accommodations/${item.accommodation_id}`)}
+            <div className="mt-4">
+              {isLoading ? (
+                <div className="flex items-center justify-center py-12 text-slate-700">
+                  <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-sky-600"></div>
+                </div>
+              ) : wishlist && wishlist.length === 0 ? (
+                <div className="text-center py-12">
+                  <Heart className="h-16 w-16 text-slate-200 mx-auto mb-4" />
+                  <h2 className="text-xl font-semibold text-slate-900 mb-2">찜한 숙소가 없습니다</h2>
+                  <p className="text-slate-600 mb-6">마음에 드는 숙소를 찜해보세요!</p>
+                  <button
+                    onClick={() => router.push("/search")}
+                    className="rounded-xl bg-sky-600 px-6 py-3 text-white shadow hover:bg-sky-700 transition"
                   >
-                    {accommodation?.first_image ? (
-                      <img
-                        src={accommodation.first_image}
-                        alt={accommodation.name}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex items-center justify-center h-full">
-                        <Heart className="h-12 w-12 text-gray-300" />
-                      </div>
-                    )}
-                    <div className="absolute top-2 right-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRemove(item.accommodation_id);
-                        }}
-                        className="bg-white/90 backdrop-blur p-2 rounded-full hover:bg-white transition"
-                        aria-label="삭제"
+                    숙소 둘러보기
+                  </button>
+                </div>
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {getUniqueAccommodations().map((item: Wishlist) => {
+                    const accommodation = accommodationDetails[item.accommodation_id];
+
+                    return (
+                      <div
+                        key={item.id}
+                        className="overflow-hidden rounded-2xl border border-sky-100/70 bg-white shadow-sm transition hover:shadow-md"
                       >
-                        <Trash2 className="h-4 w-4 text-red-600" />
-                      </button>
-                    </div>
-                  </div>
+                        <div
+                          className="relative h-48 cursor-pointer bg-gray-100"
+                          onClick={() => router.push(`/accommodations/${item.accommodation_id}`)}
+                        >
+                          {accommodation?.first_image ? (
+                            <img
+                              src={accommodation.first_image}
+                              alt={accommodation.name}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-full items-center justify-center">
+                              <Heart className="h-12 w-12 text-gray-300" />
+                            </div>
+                          )}
+                          <div className="absolute top-2 right-2">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRemove(item.accommodation_id);
+                              }}
+                              className="rounded-full bg-white/90 p-2 backdrop-blur transition hover:bg-white"
+                              aria-label="삭제"
+                            >
+                              <Trash2 className="h-4 w-4 text-red-600" />
+                            </button>
+                          </div>
+                        </div>
 
-                  <div className="p-4">
-                    <h3
-                      className="text-lg font-semibold text-gray-900 mb-2 cursor-pointer hover:text-blue-600"
-                      onClick={() => router.push(`/accommodations/${item.accommodation_id}`)}
-                    >
-                      {accommodation?.name || "숙소 정보 로딩 중..."}
-                    </h3>
+                        <div className="p-4">
+                          <h3
+                            className="mb-2 cursor-pointer text-lg font-semibold text-gray-900 hover:text-blue-600"
+                            onClick={() => router.push(`/accommodations/${item.accommodation_id}`)}
+                          >
+                            {accommodation?.name || "숙소 정보 로딩 중..."}
+                          </h3>
 
-                    {accommodation?.region && (
-                      <div className="flex items-center gap-1 text-sm text-gray-600 mb-3">
-                        <MapPin className="h-4 w-4" />
-                        <span>{accommodation.region}</span>
-                      </div>
-                    )}
+                          {accommodation?.region && (
+                            <div className="mb-3 flex items-center gap-1 text-sm text-gray-600">
+                              <MapPin className="h-4 w-4" />
+                              <span>{accommodation.region}</span>
+                            </div>
+                          )}
 
-                    {/* 날짜 알림 설정 버튼 */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleOpenCalendar(item.accommodation_id);
-                      }}
-                      className="w-full mb-3 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-sm font-medium transition flex items-center justify-center gap-2"
-                    >
-                      <CalendarPlus className="h-4 w-4" />
-                      날짜 알림 설정
-                    </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenCalendar(item.accommodation_id);
+                            }}
+                            className="mb-3 flex w-full items-center justify-center gap-2 rounded-lg bg-sky-50 px-3 py-2 text-sm font-medium text-sky-700 transition hover:bg-sky-100"
+                          >
+                            <CalendarPlus className="h-4 w-4" />
+                            날짜 알림 설정
+                          </button>
 
-                    {/* 설정된 날짜 알림 표시 */}
-                    {getAccommodationDates(item.accommodation_id).length > 0 && (
-                      <div className="mb-3">
-                        <p className="text-xs text-gray-600 mb-2">알림 설정 날짜:</p>
-                        <div className="flex flex-wrap gap-1">
-                          {getAccommodationDates(item.accommodation_id).map((date) => {
-                            const dateObj = new Date(date);
-                            const month = dateObj.getMonth() + 1;
-                            const day = dateObj.getDate();
-                            const weekday = dateObj.toLocaleDateString("ko-KR", { weekday: "short" });
-                            return (
-                              <span
-                                key={date}
-                                className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs"
-                              >
-                                {`${month}/${day}(${weekday})`}
-                              </span>
-                            );
-                          })}
+                          {getAccommodationDates(item.accommodation_id).length > 0 && (
+                            <div className="mb-3">
+                              <p className="mb-2 text-xs text-gray-600">알림 설정 날짜:</p>
+                              <div className="flex flex-wrap gap-1">
+                                {getAccommodationDates(item.accommodation_id).map((date) => {
+                                  const dateObj = new Date(date);
+                                  const month = dateObj.getMonth() + 1;
+                                  const day = dateObj.getDate();
+                                  const weekday = dateObj.toLocaleDateString("ko-KR", { weekday: "short" });
+                                  return (
+                                    <span
+                                      key={date}
+                                      className="rounded bg-sky-100 px-2 py-1 text-xs text-sky-700"
+                                    >
+                                      {`${month}/${day}(${weekday})`}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-between border-t border-gray-100 pt-3">
+                            <Badge
+                              variant={isNotificationEnabled(item.accommodation_id) ? "default" : "secondary"}
+                              className="text-xs"
+                            >
+                              {isNotificationEnabled(item.accommodation_id) ? "알림 ON" : "알림 OFF"}
+                            </Badge>
+
+                            <button
+                              onClick={() => handleToggleNotification(item.accommodation_id)}
+                              className="flex items-center gap-1 text-xs text-gray-600 transition hover:text-blue-600"
+                              aria-label="알림 토글"
+                            >
+                              {isNotificationEnabled(item.accommodation_id) ? (
+                                <BellOff className="h-4 w-4" />
+                              ) : (
+                                <Bell className="h-4 w-4" />
+                              )}
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    )}
-
-                    <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                      <Badge
-                        variant={item.notify_enabled ? "default" : "secondary"}
-                        className="text-xs"
-                      >
-                        {item.notify_enabled ? "알림 ON" : "알림 OFF"}
-                      </Badge>
-
-                      <button
-                        onClick={() => handleToggleNotification(item)}
-                        className="flex items-center gap-1 text-xs text-gray-600 hover:text-blue-600 transition"
-                        aria-label="알림 토글"
-                      >
-                        {item.notify_enabled ? (
-                          <BellOff className="h-4 w-4" />
-                        ) : (
-                          <Bell className="h-4 w-4" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
-          </div>
-        )}
+              )}
+            </div>
+          </section>
+        </main>
       </div>
 
       <BottomNav activeHref="/wishlist" />
 
-      {/* Date Calendar Modal */}
       {calendarOpen && selectedAccommodation && (
         <DateCalendar
           accommodationId={selectedAccommodation.id}

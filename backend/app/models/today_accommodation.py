@@ -44,6 +44,9 @@ class TodayAccommodation(Base):
     # 온라인 가격 (네이버 호텔에서 크롤링한 실제 숙박 금액)
     online_price = Column(Float, nullable=True)
 
+    # SOL점수 (온라인 최저가 대비 신청 점수의 효율성, 0~100점)
+    sol_score = Column(Float, nullable=True)
+
     # 등록시간
     created_at = Column(DateTime, default=func.now())
 

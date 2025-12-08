@@ -34,6 +34,20 @@ class User(Base):
     refresh_token_jti = Column(String, nullable=True, index=True)  # 리프레시 토큰 ID
     refresh_token_expires_at = Column(DateTime, nullable=True)  # 리프레시 토큰 만료
 
+    # 푸시 알림 관련
+    fcm_token = Column(String(512), nullable=True)  # Android FCM 토큰
+    web_push_subscription = Column(JSON, nullable=True)  # iOS Web Push 구독 정보
+    preferred_notification_channel = Column(String(50), nullable=True)  # 'fcm' 또는 'web_push'
+    notification_enabled = Column(Boolean, default=True)  # 전역 알림 활성화
+
+    # 디바이스 정보
+    device_type = Column(String(50), nullable=True)  # 'ios', 'android', 'web'
+    ios_version = Column(String(20), nullable=True)  # 예: "16.4"
+    pwa_installed = Column(Boolean, default=False)  # PWA 설치 여부
+
+    # 통계 정보 (버그 수정용)
+    successful_bookings = Column(Integer, default=0)  # 성공한 예약 수
+
     # 타임스탬프
     created_at = Column(DateTime, default=func.now())  # 등록시간
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())  # 업데이트시간
