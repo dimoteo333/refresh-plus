@@ -3,25 +3,29 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { accommodationApi } from "@/lib/api";
-import { ArrowLeft, Globe, Heart, MapPin, Phone } from "lucide-react";
+import { ArrowLeft, Globe, Heart, MapPin, Phone, Sparkles } from "lucide-react";
 import { AccommodationDetail, AvailableDate } from "@/types/accommodation";
 import AccommodationImageCarousel from "@/components/accommodation/AccommodationImageCarousel";
 import AvailableDatePicker from "@/components/accommodation/AvailableDatePicker";
 import WeekdayAverageChart from "@/components/accommodation/WeekdayAverageChart";
 import BottomNav from "@/components/layout/BottomNav";
 import { Badge } from "@/components/ui/badge";
-import NaverMap from "@/components/accommodation/NaverMap";
+import { useWishlist } from "@/hooks/useWishlist";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function AccommodationDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
+  const { isAuthenticated } = useAuth();
+  const { addToWishlist, removeFromWishlist, isWishlisted: checkWishlisted, isLoading: wishlistLoading } = useWishlist();
 
   const [accommodation, setAccommodation] = useState<AccommodationDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<AvailableDate | null>(null);
-  const [isWishlisted, setIsWishlisted] = useState(false);
+  const [aiSummary, setAiSummary] = useState<string[] | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
   useEffect(() => {
     const fetchAccommodation = async () => {
@@ -29,9 +33,6 @@ export default function AccommodationDetailPage() {
         setLoading(true);
         const response = await accommodationApi.getDetailPage(id);
         setAccommodation(response.data);
-        if (typeof response.data.is_wishlisted === "boolean") {
-          setIsWishlisted(response.data.is_wishlisted);
-        }
 
         // 첫 번째 예약 가능 날짜를 자동으로 선택
         if (response.data.available_dates && response.data.available_dates.length > 0) {
@@ -48,6 +49,46 @@ export default function AccommodationDetailPage() {
     if (id) {
       fetchAccommodation();
     }
+  }, [id]);
+
+  const handleToggleWishlist = async () => {
+    if (!isAuthenticated) {
+      alert("로그인이 필요합니다.");
+      router.push("/login");
+      return;
+    }
+
+    try {
+      if (checkWishlisted(id)) {
+        await removeFromWishlist(id);
+      } else {
+        await addToWishlist({
+          accommodation_id: id,
+          desired_date: selectedDate?.date,
+          notify_enabled: true,
+        });
+      }
+    } catch (err: any) {
+      console.error("Failed to toggle wishlist:", err);
+      alert(err.response?.data?.detail || "즐겨찾기 처리 중 오류가 발생했습니다.");
+    }
+  };
+
+  useEffect(() => {
+    const fetchAiSummary = async () => {
+      if (!id) return;
+      try {
+        setAiLoading(true);
+        const response = await accommodationApi.getAiSummary(id);
+        setAiSummary(response.data || null);
+      } catch (err) {
+        console.warn("AI 요약 불러오기 실패:", err);
+      } finally {
+        setAiLoading(false);
+      }
+    };
+
+    fetchAiSummary();
   }, [id]);
 
   if (loading) {
@@ -92,13 +133,14 @@ export default function AccommodationDetailPage() {
           </button>
           <button
             type="button"
-            onClick={() => setIsWishlisted((prev) => !prev)}
+            onClick={handleToggleWishlist}
             aria-label="즐겨찾기"
+            disabled={wishlistLoading}
             className={`rounded-full p-2 backdrop-blur transition ${
-              isWishlisted ? "bg-red-500/80 text-white" : "bg-black/40 text-white hover:bg-black/60"
-            }`}
+              checkWishlisted(id) ? "bg-red-500/80 text-white" : "bg-black/40 text-white hover:bg-black/60"
+            } ${wishlistLoading ? "opacity-50 cursor-not-allowed" : ""}`}
           >
-            <Heart className={`h-5 w-5 ${isWishlisted ? "fill-current" : ""}`} />
+            <Heart className={`h-5 w-5 ${checkWishlisted(id) ? "fill-current" : ""}`} />
           </button>
         </div>
         {accommodation.region && (
@@ -166,12 +208,6 @@ export default function AccommodationDetailPage() {
             )}
           </div>
 
-          {accommodation.address && (
-            <div className="mt-6">
-              <NaverMap address={accommodation.address} />
-            </div>
-          )}
-
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
               <p className="text-sm font-semibold text-gray-500">숙소 타입</p>
@@ -200,6 +236,31 @@ export default function AccommodationDetailPage() {
                   </Badge>
                 ))}
               </div>
+            </div>
+          )}
+
+          {(aiLoading || (aiSummary && aiSummary.length > 0)) && (
+            <div className="mt-6 rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-sky-50 p-5 shadow-sm">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="rounded-full bg-indigo-100 p-2 text-indigo-700">
+                  <Sparkles className="h-4 w-4" />
+                </div>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  AI 3줄 요약 {aiLoading && <span className="text-xs text-indigo-500">(로딩중)</span>}
+                </h2>
+              </div>
+              {aiSummary && aiSummary.length > 0 ? (
+                <ul className="space-y-2 text-sm text-gray-800 leading-relaxed">
+                  {aiSummary.map((line, idx) => (
+                    <li key={`ai-summary-${idx}`} className="flex gap-2">
+                      <span className="text-indigo-500">•</span>
+                      <span>{line}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-gray-600">요약을 준비하고 있습니다...</p>
+              )}
             </div>
           )}
         </div>

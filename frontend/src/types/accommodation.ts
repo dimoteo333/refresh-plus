@@ -43,8 +43,14 @@ export interface SearchAccommodation {
   first_image?: string;
   summary?: string[];
   avg_score?: number;
+  avg_price?: number;
   is_wishlisted: boolean;
   notify_enabled: boolean;
+  // 날짜별 정보 (date 파라미터 제공 시)
+  date?: string;
+  applicants?: number;
+  score?: number;
+  status?: string;
 }
 
 export interface AccommodationFilters {
@@ -83,4 +89,5 @@ export interface AccommodationDetail {
   available_dates: AvailableDate[];
   weekday_averages: WeekdayAverage[];
   is_wishlisted?: boolean;
+  ai_summary?: string[];
 }

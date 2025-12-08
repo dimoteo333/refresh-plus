@@ -15,6 +15,7 @@
 | `id` | VARCHAR | PRIMARY KEY, INDEX | 숙소Id (PK) |
 | `region` | VARCHAR | INDEX | 지역 |
 | `accommodation_id` | VARCHAR | INDEX, NULLABLE | 숙소id (원본 시스템의 ID) |
+| `naver_hotel_id` | VARCHAR | INDEX, NULLABLE | 네이버 호텔 CID |
 | `name` | VARCHAR | INDEX | 숙소명 |
 | `address` | TEXT | NULLABLE | 주소 |
 | `contact` | VARCHAR | NULLABLE | 연락처 |
@@ -31,6 +32,7 @@
 - `ix_accommodations_id` (id)
 - `ix_accommodations_region` (region)
 - `ix_accommodations_accommodation_id` (accommodation_id)
+- `ix_accommodations_naver_hotel_id` (naver_hotel_id)
 - `ix_accommodations_name` (name)
 
 ---

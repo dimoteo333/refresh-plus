@@ -19,6 +19,9 @@ class Accommodation(Base):
     
     # 숙소명
     name = Column(String, index=True)
+
+    # 네이버 호텔 ID (hotels.naver.com)
+    naver_hotel_id = Column(String, nullable=True, index=True)
     
     # 주소
     address = Column(Text, nullable=True)

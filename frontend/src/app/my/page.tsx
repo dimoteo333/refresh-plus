@@ -28,6 +28,7 @@ import { useBookings } from "@/hooks/useBookings";
 import { useWishlist } from "@/hooks/useWishlist";
 import { differenceInCalendarDays, format } from "date-fns";
 import { ko } from "date-fns/locale";
+import { BookingStatus } from "@/types/booking";
 import { Booking } from "@/types/booking";
 
 type BookingWithAccommodation = Booking & {
@@ -44,7 +45,7 @@ export default function MyPage() {
 
   const normalizedBookings: NormalizedBooking[] = (bookings as BookingWithAccommodation[]).map((booking) => ({
     ...booking,
-    status: (booking.status || "").toLowerCase(),
+    status: (booking.status || "").toLowerCase() as BookingStatus,
   }));
 
   const scheduleStatuses = new Set(["pending", "won", "cancelled"]);
@@ -229,7 +230,7 @@ export default function MyPage() {
                         </div>
                         <div>
                         <CardTitle className="text-base text-slate-900">
-                          {booking.accommodation_name || booking.accommodation?.name || "숙소 정보 없음"}
+                          {booking.accommodation?.name || "숙소 정보 없음"}
                         </CardTitle>
                         <p className="text-xs text-slate-600">
                           {formatStaySummary(booking)}

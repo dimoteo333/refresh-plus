@@ -40,10 +40,12 @@ class AccommodationDate(Base):
     
     # 신청상태 (예: "신청중", "마감", "신청불가", "객실없음" 등)
     status = Column(String, nullable=True, index=True)
-    
+
+    # 온라인 가격 (네이버 호텔에서 크롤링한 실제 숙박 금액)
+    online_price = Column(Float, nullable=True)
+
     # 등록시간
     created_at = Column(DateTime, default=func.now())
-    
+
     # 업데이트시간
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
-
