@@ -61,7 +61,7 @@ export default function AccommodationCard({
             {accommodation.summary.slice(0, 3).map((item, index) => (
               <Badge
                 key={`${accommodation.id}-card-summary-${index}`}
-                variant="outline"
+                variant="secondary"
                 className="border-sky-100 text-sky-700"
               >
                 {item}

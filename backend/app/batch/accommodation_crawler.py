@@ -123,11 +123,34 @@ async def _collect_page_shbrefresh_urls(page: Page) -> List[str]:
 
 async def _find_active_refresh_sso_href(page: Page) -> Optional[str]:
     """Locate the Refresh SSO link under swiper slides without extra waits."""
+
+    # 페이지가 완전히 로드될 때까지 대기
+    try:
+        await page.wait_for_load_state("networkidle", timeout=5000)
+    except:
+        pass
+
+    # 추가 안정화 대기 (동적 콘텐츠 로딩을 위해)
+    await page.wait_for_timeout(3000)
+
+    # iframe 확인
+    frames = page.frames
+    logger.info(f"Total frames on page: {len(frames)}")
+    for idx, frame in enumerate(frames):
+        try:
+            frame_url = frame.url
+            logger.info(f"  Frame {idx}: {frame_url}")
+        except:
+            pass
+
+    # 방법 1: 특정 선택자로 찾기
     selectors = [
-        "li.swiper-slide.swiper-slide-active a[href*='vservice'][href*='sh_gmidas']",
-        "li.swiper-slide.swiper-slide-active a[href]",
+        "a[href*='vservice.html'][href*='sh_gmidas']",
+        "a[href*='vservice'][href*='sh_gmidas']",
+        "li.swiper-slide.swiper-slide-active a[href*='vservice']",
         "li.swiper-slide a[href*='vservice'][href*='sh_gmidas']",
-        "li.swiper-slide a[href]",
+        "a[href*='client_id=sh_gmidas']",
+        "a[href*='shbrefresh']",
     ]
 
     for selector in selectors:
@@ -135,25 +158,132 @@ async def _find_active_refresh_sso_href(page: Page) -> Optional[str]:
             anchor = await page.query_selector(selector)
             if anchor:
                 href = await anchor.get_attribute("href")
-                if href:
+                if href and ("vservice" in href or "sh_gmidas" in href or "shbrefresh" in href):
                     full_href = urljoin(page.url, href)
                     logger.info(f"Found Refresh SSO link via selector {selector}: {full_href}")
                     return full_href
         except Exception as selector_error:
             logger.debug(f"Selector {selector} did not resolve Refresh SSO link: {selector_error}")
 
+    # 방법 2: JavaScript로 페이지와 iframe의 모든 링크 검색
     try:
-        hrefs = await page.evaluate(
-            "() => Array.from(document.querySelectorAll('li.swiper-slide a[href]')).map(a => a.getAttribute('href'))"
-        )
-        for href in hrefs or []:
-            if href and "vservice" in href and "sh_gmidas" in href:
-                full_href = urljoin(page.url, href)
-                logger.info(f"Found Refresh SSO link via bulk scan: {full_href}")
-                return full_href
-    except Exception as eval_error:
-        logger.debug(f"Bulk scan for SSO href failed: {eval_error}")
+        logger.info("Searching all links on page and iframes for SSO URL...")
 
+        # 메인 페이지에서 링크 검색
+        all_hrefs = []
+        try:
+            main_hrefs = await page.evaluate(
+                """() => {
+                    const links = Array.from(document.querySelectorAll('a[href]'));
+                    return links.map(a => ({
+                        href: a.getAttribute('href'),
+                        text: a.innerText || '',
+                        className: a.className || '',
+                        source: 'main'
+                    }));
+                }"""
+            )
+            all_hrefs.extend(main_hrefs or [])
+            logger.info(f"Links found on main page: {len(main_hrefs or [])}")
+        except Exception as e:
+            logger.debug(f"Error searching main page: {e}")
+
+        # 각 iframe에서 링크 검색
+        for idx, frame in enumerate(frames):
+            try:
+                frame_hrefs = await frame.evaluate(
+                    """() => {
+                        const links = Array.from(document.querySelectorAll('a[href]'));
+                        return links.map(a => ({
+                            href: a.getAttribute('href'),
+                            text: a.innerText || '',
+                            className: a.className || ''
+                        }));
+                    }"""
+                )
+                if frame_hrefs:
+                    for link in frame_hrefs:
+                        link['source'] = f'iframe_{idx}'
+                    all_hrefs.extend(frame_hrefs)
+                    logger.info(f"Links found in iframe {idx}: {len(frame_hrefs)}")
+            except Exception as e:
+                logger.debug(f"Error searching iframe {idx}: {e}")
+
+        logger.info(f"Total links found (all sources): {len(all_hrefs)}")
+
+        # shbrefresh 또는 sh_gmidas 관련 링크만 출력 (디버깅용)
+        refresh_related_links = []
+        for link_info in all_hrefs:
+            href = link_info.get('href', '')
+            if any(keyword in href.lower() for keyword in ['shbrefresh', 'sh_gmidas', 'refresh', 'gmidas']):
+                refresh_related_links.append(link_info)
+
+        logger.info(f"Refresh-related links found: {len(refresh_related_links)}")
+        for idx, link_info in enumerate(refresh_related_links[:10], 1):
+            href = link_info.get('href', '')
+            text = link_info.get('text', '')[:30]
+            source = link_info.get('source', 'unknown')
+            logger.info(f"  Refresh Link {idx} [{source}]:")
+            logger.info(f"    URL: {href}")
+            logger.info(f"    Text: {text}")
+
+        # SSO 링크 패턴 매칭 - sh_gmidas를 포함하는 링크 우선
+        best_match = None
+        best_score = 0
+
+        for link_info in all_hrefs:
+            href = link_info.get('href', '')
+            if not href:
+                continue
+
+            score = 0
+            # sh_gmidas를 포함하면 가장 높은 점수
+            if 'sh_gmidas' in href:
+                score += 100
+            # shbrefresh를 포함하면 추가 점수
+            if 'shbrefresh' in href.lower():
+                score += 50
+            # vservice.html을 포함하면 기본 점수
+            if 'vservice.html' in href:
+                score += 10
+
+            if score > best_score:
+                best_score = score
+                best_match = link_info
+
+        if best_match:
+            href = best_match.get('href', '')
+            full_href = urljoin(page.url, href)
+            logger.info(f"✓ Found Refresh SSO link via JavaScript scan (score: {best_score}): {full_href}")
+            logger.info(f"  Link text: {best_match.get('text', '')[:50]}")
+            logger.info(f"  Link source: {best_match.get('source', 'unknown')}")
+            return full_href
+
+    except Exception as eval_error:
+        logger.warning(f"JavaScript link scan failed: {eval_error}")
+
+    # 방법 3: 페이지 HTML 전체에서 URL 패턴 추출
+    try:
+        logger.info("Extracting SSO URLs from page HTML...")
+        page_content = await page.content()
+
+        # vservice.html을 포함하는 URL 패턴 찾기
+        import re
+        url_pattern = re.compile(r'(https?://[^\s"\'<>]+vservice\.html[^\s"\'<>]*)')
+        matches = url_pattern.findall(page_content)
+
+        for match in matches:
+            if 'sh_gmidas' in match or 'shbrefresh' in match:
+                # HTML 엔티티 디코딩
+                from html import unescape
+                decoded_url = unescape(match)
+                logger.info(f"Found Refresh SSO link via HTML pattern: {decoded_url}")
+                return decoded_url
+
+    except Exception as html_error:
+        logger.debug(f"HTML pattern extraction failed: {html_error}")
+
+    logger.warning("Could not find Refresh SSO link using any method")
     return None
 
 
@@ -1327,154 +1457,205 @@ async def crawl_individual_accommodation(
 
         logger.info(f"  Extracting date booking information from calendar...")
 
-        # calendar 클래스 또는 data-role="roomInfo" 요소 찾기
-        room_info_elements = await page.query_selector_all('[data-role="roomInfo"]')
-
-        if not room_info_elements:
-            # 대안: calendar 클래스 내부에서 찾기
-            calendars = await page.query_selector_all('.calendar, [class*="calendar"]')
-            for calendar in calendars:
-                room_info_elements.extend(await calendar.query_selector_all('[data-role="roomInfo"]'))
-
-        logger.info(f"  Found {len(room_info_elements)} room info elements")
-
-        for room_info in room_info_elements:
-            try:
-                # data-rblockdate 속성에서 날짜 추출
-                date_str = await room_info.get_attribute("data-rblockdate")
-                if not date_str:
-                    continue
-
-                logger.debug(f"    Processing date: {date_str}")
-
-                # room_status 요소 찾기
-                room_status_element = await room_info.query_selector(".room_status, [class*='room_status']")
-                if not room_status_element:
-                    # room_status가 없으면 전체 텍스트에서 추출
-                    room_status_element = room_info
-
-                room_status_html = await room_status_element.inner_html()
-                room_status_text = await room_status_element.inner_text()
-
-                # 상태 추출
-                status = "Unknown"
-                if "신청중" in room_status_text or "신청 중" in room_status_text:
-                    status = "신청중"
-                elif "마감" in room_status_text or "신청종료" in room_status_text:
-                    status = "마감(신청종료)"
-                elif "신청불가" in room_status_text:
-                    status = "신청불가(오픈전)"
-                elif "객실없음" in room_status_text:
-                    status = "객실없음"
-
-                # 최초 점수와 상시 점수를 data 속성에서 직접 추출 (가장 정확)
-                choi_score = 0.0  # 최초 점수
-                sangsi_score = 0.0  # 상시 점수
-
-                # data-first-room-score 속성에서 최초 점수 추출
-                first_score_attr = await room_info.get_attribute("data-first-room-score")
-                if first_score_attr and first_score_attr.strip():
-                    try:
-                        choi_score = float(first_score_attr)
-                        logger.debug(f"      최초 점수: {choi_score}점 (from data-first-room-score)")
-                    except:
-                        pass
-
-                # data-permanent-room-score 속성에서 상시 점수 추출
-                permanent_score_attr = await room_info.get_attribute("data-permanent-room-score")
-                if permanent_score_attr and permanent_score_attr.strip():
-                    try:
-                        sangsi_score = float(permanent_score_attr)
-                        logger.debug(f"      상시 점수: {sangsi_score}점 (from data-permanent-room-score)")
-                    except:
-                        pass
-
-                # data 속성에서 추출 실패 시, HTML에서 파싱 시도 (fallback)
-                if choi_score == 0.0 and sangsi_score == 0.0:
-                    # <span>최초</span> 다음의 점수 추출
-                    choi_match = re.search(r'<span[^>]*>최초</span>\s*\d+\s*실\s*-\s*(\d+\.?\d*)\s*점', room_status_html)
-                    if choi_match:
-                        choi_score = float(choi_match.group(1))
-                        logger.debug(f"      최초 점수: {choi_score}점 (from HTML)")
-
-                    # <span>상시</span> 다음의 점수 추출
-                    sangsi_match = re.search(r'<span[^>]*>상시</span>\s*\d+\s*실\s*-\s*(\d+\.?\d*)\s*점', room_status_html)
-                    if sangsi_match:
-                        sangsi_score = float(sangsi_match.group(1))
-                        logger.debug(f"      상시 점수: {sangsi_score}점 (from HTML)")
-
-                    # <span>예상점수</span> 추출 (최초/상시가 없는 경우)
-                    if choi_score == 0.0 and sangsi_score == 0.0:
-                        expected_match = re.search(r'<span[^>]*>예상점수</span>\s*(\d+\.?\d*)', room_status_html)
-                        if expected_match:
-                            sangsi_score = float(expected_match.group(1))
-                            logger.debug(f"      예상점수: {sangsi_score}점 (from HTML)")
-
-                # 두 점수 중 더 높은 점수 선택
-                score = max(choi_score, sangsi_score)
-
-                if score > 0:
-                    logger.debug(f"      Selected score: {score}점 (최초: {choi_score}, 상시: {sangsi_score})")
-
-                # 인원 추출 (data 속성 우선, 없으면 HTML 파싱)
-                applicants = 0
-                apply_count_attr = await room_info.get_attribute("data-apply-count")
-                if apply_count_attr and apply_count_attr.strip():
-                    try:
-                        applicants = int(apply_count_attr)
-                        logger.debug(f"      신청인원: {applicants}명 (from data-apply-count)")
-                    except:
-                        pass
-
-                # data 속성에서 추출 실패 시 HTML 파싱
-                if applicants == 0:
-                    applicants_patterns = [
-                        r'<span[^>]*>신청인원</span>\s*(\d+)',
-                        r'신청인원[:\s]*(\d+)',
-                        r'(\d+)\s*명',
+        # 현재 월 + 이전 2개월 데이터 크롤링 (총 3개월)
+        for month_offset in range(3):
+            if month_offset > 0:
+                # month_prev 버튼 클릭하여 이전 달로 이동
+                logger.info(f"  Navigating to {month_offset} month(s) ago...")
+                try:
+                    # month_prev 버튼 찾기 (여러 가능한 선택자)
+                    prev_button_selectors = [
+                        ".month_prev",
+                        "[class*='month_prev']",
+                        "[class*='prev']",
+                        "button:has-text('이전')",
+                        "a:has-text('이전')",
                     ]
 
-                    for pattern in applicants_patterns:
-                        match = re.search(pattern, room_status_text)
-                        if match:
-                            applicants = int(match.group(1))
-                            logger.debug(f"      신청인원: {applicants}명 (from HTML)")
-                            break
+                    prev_button = None
+                    for selector in prev_button_selectors:
+                        try:
+                            prev_button = await page.query_selector(selector)
+                            if prev_button:
+                                is_visible = await prev_button.is_visible()
+                                if is_visible:
+                                    logger.debug(f"    Found prev button with selector: {selector}")
+                                    break
+                                else:
+                                    prev_button = None
+                        except:
+                            continue
 
-                # 객실 수 추출 (data 속성 우선)
-                rooms = 0
-                room_count_attr = await room_info.get_attribute("data-room-count")
-                if room_count_attr and room_count_attr.strip():
-                    try:
-                        rooms = int(room_count_attr)
-                        logger.debug(f"      객실수: {rooms}실 (from data-room-count)")
-                    except:
-                        pass
+                    if prev_button:
+                        await prev_button.click()
+                        await page.wait_for_timeout(1500)  # 달력 로딩 대기
+                        logger.info(f"    ✓ Navigated to previous month ({month_offset} month(s) ago)")
+                    else:
+                        logger.warning(f"    ⚠️  Previous month button not found, skipping month offset {month_offset}")
+                        break
 
-                # data 속성에서 추출 실패 시 HTML 파싱
-                if rooms == 0:
-                    rooms_match = re.search(r'<span[^>]*>객실수</span>\s*(\d+)', room_status_html)
-                    if not rooms_match:
-                        rooms_match = re.search(r'객실수?[:\s]*(\d+)', room_status_text)
-                    if not rooms_match:
-                        rooms_match = re.search(r'(\d+)\s*실', room_status_text)
-                    if rooms_match:
-                        rooms = int(rooms_match.group(1))
-                        logger.debug(f"      객실수: {rooms}실 (from HTML)")
+                except Exception as e:
+                    logger.warning(f"    Error navigating to previous month: {str(e)}")
+                    break
 
-                # 날짜 정보 저장
-                if date_str and (status != "Unknown" or score > 0):
-                    date_booking_info[date_str] = {
-                        "status": status,
-                        "score": score,
-                        "applicants": applicants,
-                        "rooms": rooms
-                    }
-                    logger.info(f"    ✓ {date_str}: {status}, {score}점, {applicants}명, {rooms}실")
+            # calendar 클래스 또는 data-role="roomInfo" 요소 찾기
+            room_info_elements = await page.query_selector_all('[data-role="roomInfo"]')
 
-            except Exception as e:
-                logger.debug(f"    Error processing room info: {str(e)}")
-                continue
+            if not room_info_elements:
+                # 대안: calendar 클래스 내부에서 찾기
+                calendars = await page.query_selector_all('.calendar, [class*="calendar"]')
+                for calendar in calendars:
+                    room_info_elements.extend(await calendar.query_selector_all('[data-role="roomInfo"]'))
+
+            logger.info(f"  Found {len(room_info_elements)} room info elements for month offset {month_offset}")
+
+            for room_info in room_info_elements:
+                try:
+                    # data-rblockdate 속성에서 날짜 추출
+                    date_str = await room_info.get_attribute("data-rblockdate")
+                    if not date_str:
+                        continue
+
+                    logger.debug(f"    Processing date: {date_str}")
+
+                    # room_status 요소 찾기
+                    room_status_element = await room_info.query_selector(".room_status, [class*='room_status']")
+                    if not room_status_element:
+                        # room_status가 없으면 전체 텍스트에서 추출
+                        room_status_element = room_info
+
+                    room_status_html = await room_status_element.inner_html()
+                    room_status_text = await room_status_element.inner_text()
+
+                    # 상태 추출
+                    status = "Unknown"
+                    if "신청중" in room_status_text or "신청 중" in room_status_text:
+                        status = "신청중"
+                    elif "마감" in room_status_text or "신청종료" in room_status_text:
+                        status = "마감(신청종료)"
+                    elif "신청불가" in room_status_text:
+                        status = "신청불가(오픈전)"
+                    elif "객실없음" in room_status_text:
+                        status = "객실없음"
+
+                    # '마감(신청종료)' 상태만 처리
+                    if status != "마감(신청종료)":
+                        logger.debug(f"      Skipping {date_str}: status is '{status}' (only '마감(신청종료)' is saved)")
+                        continue
+
+                    # 최초 점수와 상시 점수를 data 속성에서 직접 추출 (가장 정확)
+                    choi_score = 0.0  # 최초 점수
+                    sangsi_score = 0.0  # 상시 점수
+
+                    # data-first-room-score 속성에서 최초 점수 추출
+                    first_score_attr = await room_info.get_attribute("data-first-room-score")
+                    if first_score_attr and first_score_attr.strip():
+                        try:
+                            choi_score = float(first_score_attr)
+                            logger.debug(f"      최초 점수: {choi_score}점 (from data-first-room-score)")
+                        except:
+                            pass
+
+                    # data-permanent-room-score 속성에서 상시 점수 추출
+                    permanent_score_attr = await room_info.get_attribute("data-permanent-room-score")
+                    if permanent_score_attr and permanent_score_attr.strip():
+                        try:
+                            sangsi_score = float(permanent_score_attr)
+                            logger.debug(f"      상시 점수: {sangsi_score}점 (from data-permanent-room-score)")
+                        except:
+                            pass
+
+                    # data 속성에서 추출 실패 시, HTML에서 파싱 시도 (fallback)
+                    if choi_score == 0.0 and sangsi_score == 0.0:
+                        # <span>최초</span> 다음의 점수 추출
+                        choi_match = re.search(r'<span[^>]*>최초</span>\s*\d+\s*실\s*-\s*(\d+\.?\d*)\s*점', room_status_html)
+                        if choi_match:
+                            choi_score = float(choi_match.group(1))
+                            logger.debug(f"      최초 점수: {choi_score}점 (from HTML)")
+
+                        # <span>상시</span> 다음의 점수 추출
+                        sangsi_match = re.search(r'<span[^>]*>상시</span>\s*\d+\s*실\s*-\s*(\d+\.?\d*)\s*점', room_status_html)
+                        if sangsi_match:
+                            sangsi_score = float(sangsi_match.group(1))
+                            logger.debug(f"      상시 점수: {sangsi_score}점 (from HTML)")
+
+                        # <span>예상점수</span> 추출 (최초/상시가 없는 경우)
+                        if choi_score == 0.0 and sangsi_score == 0.0:
+                            expected_match = re.search(r'<span[^>]*>예상점수</span>\s*(\d+\.?\d*)', room_status_html)
+                            if expected_match:
+                                sangsi_score = float(expected_match.group(1))
+                                logger.debug(f"      예상점수: {sangsi_score}점 (from HTML)")
+
+                    # 두 점수 중 더 높은 점수 선택
+                    score = max(choi_score, sangsi_score)
+
+                    if score > 0:
+                        logger.debug(f"      Selected score: {score}점 (최초: {choi_score}, 상시: {sangsi_score})")
+
+                    # 인원 추출 (data 속성 우선, 없으면 HTML 파싱)
+                    applicants = 0
+                    apply_count_attr = await room_info.get_attribute("data-apply-count")
+                    if apply_count_attr and apply_count_attr.strip():
+                        try:
+                            applicants = int(apply_count_attr)
+                            logger.debug(f"      신청인원: {applicants}명 (from data-apply-count)")
+                        except:
+                            pass
+
+                    # data 속성에서 추출 실패 시 HTML 파싱
+                    if applicants == 0:
+                        applicants_patterns = [
+                            r'<span[^>]*>신청인원</span>\s*(\d+)',
+                            r'신청인원[:\s]*(\d+)',
+                            r'(\d+)\s*명',
+                        ]
+
+                        for pattern in applicants_patterns:
+                            match = re.search(pattern, room_status_text)
+                            if match:
+                                applicants = int(match.group(1))
+                                logger.debug(f"      신청인원: {applicants}명 (from HTML)")
+                                break
+
+                    # 객실 수 추출 (data 속성 우선)
+                    rooms = 0
+                    room_count_attr = await room_info.get_attribute("data-room-count")
+                    if room_count_attr and room_count_attr.strip():
+                        try:
+                            rooms = int(room_count_attr)
+                            logger.debug(f"      객실수: {rooms}실 (from data-room-count)")
+                        except:
+                            pass
+
+                    # data 속성에서 추출 실패 시 HTML 파싱
+                    if rooms == 0:
+                        rooms_match = re.search(r'<span[^>]*>객실수</span>\s*(\d+)', room_status_html)
+                        if not rooms_match:
+                            rooms_match = re.search(r'객실수?[:\s]*(\d+)', room_status_text)
+                        if not rooms_match:
+                            rooms_match = re.search(r'(\d+)\s*실', room_status_text)
+                        if rooms_match:
+                            rooms = int(rooms_match.group(1))
+                            logger.debug(f"      객실수: {rooms}실 (from HTML)")
+
+                    # 날짜 정보 저장 ('마감(신청종료)' 상태이고 점수가 있는 경우만)
+                    if date_str and score > 0:
+                        # 이미 해당 날짜 데이터가 있으면 건너뛰기 (중복 방지)
+                        if date_str in date_booking_info:
+                            logger.debug(f"      Skipping duplicate date: {date_str}")
+                            continue
+
+                        date_booking_info[date_str] = {
+                            "status": status,
+                            "score": score,
+                            "applicants": applicants,
+                            "rooms": rooms
+                        }
+                        logger.info(f"    ✓ {date_str}: {status}, {score}점, {applicants}명, {rooms}실")
+
+                except Exception as e:
+                    logger.debug(f"    Error processing room info: {str(e)}")
+                    continue
         
         # 유효한 숙소 정보인지 확인
         if name and name != "Unknown":

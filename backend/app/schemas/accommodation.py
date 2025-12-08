@@ -74,8 +74,14 @@ class SearchAccommodationResponse(BaseModel):
     first_image: Optional[str] = None
     summary: List[str] = []
     avg_score: Optional[float] = None
+    avg_price: Optional[float] = None
     is_wishlisted: bool = False
     notify_enabled: bool = False
+    # 날짜별 정보 (date 파라미터 제공 시)
+    date: Optional[str] = None
+    applicants: Optional[int] = None
+    score: Optional[float] = None
+    status: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -115,6 +121,7 @@ class AccommodationDetailResponse(BaseModel):
     summary: List[str] = []
     available_dates: List[AvailableDateResponse] = []
     weekday_averages: List[WeekdayAverageResponse] = []
+    ai_summary: Optional[List[str]] = None
 
     class Config:
         from_attributes = True

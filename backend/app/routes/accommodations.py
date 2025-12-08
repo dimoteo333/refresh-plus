@@ -5,10 +5,10 @@ from app.database import get_db
 from app.models.accommodation import Accommodation
 from app.models.user import User
 from app.models.booking import Booking, BookingStatus
-from app.schemas.accommodation import AccommodationResponse, RandomAccommodationResponse, PopularAccommodationResponse, SearchAccommodationResponse, AccommodationDetailResponse
+from app.schemas.accommodation import AccommodationResponse, RandomAccommodationResponse, PopularAccommodationResponse, SearchAccommodationResponse, AccommodationDetailResponse, AvailableDateResponse
 from app.dependencies import get_current_user
 from app.services.accommodation_service import AccommodationService
-from typing import List
+from typing import List, Optional
 from datetime import datetime, timedelta
 
 router = APIRouter()
@@ -139,26 +139,66 @@ async def get_popular_accommodations(
 @router.get("/search", response_model=List[SearchAccommodationResponse])
 async def search_accommodations(
     keyword: str = Query(None, description="검색 키워드 (지역 또는 숙소명)"),
+    region: str = Query(None, description="지역 필터 (전체/all은 무시)"),
+    sort_by: str = Query("avg_score", regex="^(default|avg_score|name|wishlist|price|sol_score)$"),
+    sort_order: str = Query("desc", regex="^(asc|desc)$"),
+    available_only: bool = Query(False, description="신청 가능 숙소만 조회"),
+    date: str = Query(None, description="특정 날짜 필터링 (YYYY-MM-DD 형식)"),
     limit: int = Query(50, ge=1, le=100),
-    user_id: str = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None),
+    user_id: Optional[str] = Header(None, alias="X-User-ID"),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    숙소 검색 (지역, 숙소명)
-    - keyword가 없으면 region="서울"인 숙소를 우선 표시
+    숙소 검색 (지역, 숙소명, 날짜)
     - keyword가 있으면 지역 또는 숙소명으로 검색
+    - region 파라미터로 특정 지역 필터링 (전체/all/빈값은 무시)
+    - sort_by: avg_score(평균 점수), name(가나다순), wishlist(즐겨찾기 우선), price(온라인 평균가), sol_score(추후 적용)
+    - sort_order: asc/desc
+    - available_only: today_accommodation_info에 신청 가능/신청중 상태가 있는 숙소만
+    - date: 특정 날짜 필터링 (제공 시 today_accommodation_info 기준으로 신청중/신청가능 상태만 조회)
     - 각 숙소의 평균 점수 (마감(신청종료) 상태의 날짜들만)
     - 사용자의 즐겨찾기, 알림 설정 정보 포함 (로그인한 경우)
     """
 
+    # JWT 토큰 우선, 없으면 X-User-ID 사용
+    current_user_id = None
+    if authorization:
+        # JWT 토큰으로 사용자 조회
+        try:
+            token = authorization.replace("Bearer ", "").strip()
+            from app.services.auth_service import auth_service
+            user = await auth_service.get_user_from_token(token, db)
+            if user:
+                current_user_id = user.id
+        except:
+            pass  # JWT 토큰 인증 실패 시 무시하고 계속 진행
+
+    # JWT 인증 실패 시 X-User-ID 사용
+    if not current_user_id and user_id:
+        current_user_id = user_id
+
     results = await service.search_accommodations(
         db=db,
-        user_id=user_id,
+        user_id=current_user_id,
         keyword=keyword,
+        region=region,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        available_only=available_only,
+        date=date,
         limit=limit
     )
 
     return results
+
+@router.get("/regions", response_model=List[str])
+async def get_regions(
+    db: AsyncSession = Depends(get_db)
+):
+    """accommodations 테이블의 지역 목록 조회 (중복 제거, 정렬)"""
+
+    return await service.get_regions(db)
 
 @router.get("/detail/{accommodation_id}", response_model=AccommodationDetailResponse)
 async def get_accommodation_detail_page(
@@ -178,6 +218,107 @@ async def get_accommodation_detail_page(
         raise HTTPException(status_code=404, detail="Accommodation not found")
 
     return detail
+
+@router.get("/detail/{accommodation_id}/ai-summary", response_model=Optional[List[str]])
+async def get_accommodation_ai_summary(
+    accommodation_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    숙소 AI 3줄 요약 (비동기 호출용)
+    - OpenAI 키가 없으면 null 반환
+    - 장점/특징 위주로 요약
+    """
+
+    summary = await service.get_ai_summary(accommodation_id, db)
+    return summary
+
+@router.get("/{accommodation_id}/dates", response_model=List[AvailableDateResponse])
+async def get_accommodation_dates(
+    accommodation_id: str,
+    start_date: Optional[str] = Query(None, description="조회 시작 날짜 (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="조회 종료 날짜 (YYYY-MM-DD)"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    특정 숙소의 날짜별 점수와 신청 인원 조회
+    - TodayAccommodation 우선 (최신 데이터)
+    - AccommodationDate는 TodayAccommodation에 없는 날짜만
+    - 날짜 범위 지정 가능 (start_date, end_date)
+    """
+    from app.models.accommodation_date import AccommodationDate
+    from app.models.today_accommodation import TodayAccommodation
+
+    # 숙소 존재 확인
+    result = await db.execute(
+        select(Accommodation).where(Accommodation.id == accommodation_id)
+    )
+    accommodation = result.scalar_one_or_none()
+
+    if not accommodation:
+        raise HTTPException(status_code=404, detail="Accommodation not found")
+
+    # TodayAccommodation 쿼리 (최신 데이터 우선)
+    today_acc_query = select(
+        TodayAccommodation.date,
+        TodayAccommodation.score,
+        TodayAccommodation.applicants,
+        TodayAccommodation.status,
+        TodayAccommodation.weekday
+    ).where(TodayAccommodation.accommodation_id == accommodation_id)
+
+    # 날짜 범위 필터
+    if start_date:
+        today_acc_query = today_acc_query.where(TodayAccommodation.date >= start_date)
+
+    if end_date:
+        today_acc_query = today_acc_query.where(TodayAccommodation.date <= end_date)
+
+    # TodayAccommodation 조회
+    today_result = await db.execute(today_acc_query)
+    today_dates = today_result.all()
+
+    # TodayAccommodation에 있는 날짜들
+    today_date_set = {row[0] for row in today_dates}
+
+    # AccommodationDate 쿼리 (TodayAccommodation에 없는 날짜만)
+    acc_date_query = select(
+        AccommodationDate.date,
+        AccommodationDate.score,
+        AccommodationDate.applicants,
+        AccommodationDate.status,
+        AccommodationDate.weekday
+    ).where(AccommodationDate.accommodation_id == accommodation_id)
+
+    # 날짜 범위 필터
+    if start_date:
+        acc_date_query = acc_date_query.where(AccommodationDate.date >= start_date)
+
+    if end_date:
+        acc_date_query = acc_date_query.where(AccommodationDate.date <= end_date)
+
+    # TodayAccommodation에 없는 날짜만 조회
+    if today_date_set:
+        acc_date_query = acc_date_query.where(~AccommodationDate.date.in_(today_date_set))
+
+    # AccommodationDate 조회
+    acc_result = await db.execute(acc_date_query)
+    acc_dates = acc_result.all()
+
+    # 두 결과 합치고 날짜로 정렬
+    all_dates = list(today_dates) + list(acc_dates)
+    all_dates.sort(key=lambda x: x[0])  # 날짜로 정렬
+
+    return [
+        AvailableDateResponse(
+            date=date,
+            score=score or 0.0,
+            applicants=applicants or 0,
+            status=status or "미정",
+            weekday=weekday or 0
+        )
+        for date, score, applicants, status, weekday in all_dates
+    ]
 
 @router.get("/{accommodation_id}", response_model=AccommodationResponse)
 async def get_accommodation_detail(

@@ -1,68 +1,219 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { MapPin, Search, Heart, Bell, BellOff } from "lucide-react";
+import { MapPin, Search, Heart, Bell, BellOff, Calendar, Users, Star } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import BottomNav from "@/components/layout/BottomNav";
 import { accommodationApi, wishlistApi } from "@/lib/api";
 import { SearchAccommodation } from "@/types/accommodation";
+import { useAuth } from "@/contexts/AuthContext";
+import { useQueryClient } from "@tanstack/react-query";
 
 export default function SearchPage() {
   const router = useRouter();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [keyword, setKeyword] = useState("");
+  const [selectedRegion, setSelectedRegion] = useState("전체");
+  const [regionOptions, setRegionOptions] = useState<string[]>(["전체"]);
+  const [sortBy, setSortBy] = useState<"avg_score" | "name" | "wishlist" | "price" | "sol_score">(
+    "avg_score"
+  );
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [availableOnly, setAvailableOnly] = useState(false);
+  const [selectedDate, setSelectedDate] = useState("");
   const [searchResults, setSearchResults] = useState<SearchAccommodation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [updatingWishlist, setUpdatingWishlist] = useState<string | null>(null);
 
-  // 검색 실행 (키워드가 변경될 때마다)
+  // 기본 날짜: 오늘 + 1달
+  const getDefaultDate = () => {
+    const today = new Date();
+    const oneMonthLater = new Date(today.setMonth(today.getMonth() + 1));
+    return oneMonthLater.toISOString().split("T")[0];
+  };
+
+  const sortOptions: {
+    value: "avg_score" | "name" | "wishlist" | "price" | "sol_score";
+    label: string;
+  }[] = [
+    { value: "avg_score", label: "평균 점수 순" },
+    { value: "name", label: "이름 순" },
+    { value: "wishlist", label: "즐겨찾기" },
+    { value: "price", label: "가격 순" },
+    { value: "sol_score", label: "SOL 점수" },
+  ];
+
   useEffect(() => {
-    const fetchSearchResults = async () => {
+    const fetchRegions = async () => {
       try {
-        setIsLoading(true);
-        const token = localStorage.getItem("user_id") || "";
-        const response = await accommodationApi.search(token, keyword);
-        setSearchResults(response.data);
+        const response = await accommodationApi.getRegions();
+        const regions: string[] = response.data || [];
+        const uniqueRegions = Array.from(new Set(regions.filter(Boolean)));
+        setRegionOptions(["전체", ...uniqueRegions]);
       } catch (error) {
-        console.error("검색 실패:", error);
-      } finally {
-        setIsLoading(false);
+        console.error("지역 목록 조회 실패:", error);
       }
     };
 
-    // 300ms 디바운스
+    fetchRegions();
+  }, []);
+
+  const fetchSearchResults = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      // user.id를 전달하여 위시리스트 정보를 조회
+      const userId = user?.id || "";
+      const response = await accommodationApi.search(userId, {
+        keyword,
+        region: selectedRegion === "전체" ? undefined : selectedRegion,
+        sort_by: sortBy,
+        sort_order: sortOrder,
+        available_only: availableOnly,
+        date: selectedDate || undefined,
+      });
+      setSearchResults(response.data);
+    } catch (error) {
+      console.error("검색 실패:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user?.id, keyword, selectedRegion, sortBy, sortOrder, availableOnly, selectedDate]);
+
+  // 검색 실행 (조건이 변경될 때마다)
+  useEffect(() => {
     const timeoutId = setTimeout(() => {
       fetchSearchResults();
     }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [keyword]);
+  }, [fetchSearchResults]);
 
   // 즐겨찾기 토글
   const handleWishlistToggle = async (accommodationId: string, isWishlisted: boolean) => {
+    // 이미 처리 중이면 무시
+    if (updatingWishlist === accommodationId) {
+      return;
+    }
+
     try {
-      const token = localStorage.getItem("user_id") || "";
+      setUpdatingWishlist(accommodationId);
+
+      // Optimistic update: 즉시 UI 업데이트 (즐겨찾기 상태 + 알림 아이콘)
+      setSearchResults((prev) =>
+        prev.map((acc) =>
+          acc.id === accommodationId
+            ? {
+                ...acc,
+                is_wishlisted: !isWishlisted,
+                notify_enabled: !isWishlisted ? true : false // 추가 시 알림 ON, 해제 시 OFF
+              }
+            : acc
+        )
+      );
+
+      const userId = user?.id || "";
 
       if (isWishlisted) {
         // 즐겨찾기 해제 - wishlist ID를 찾아서 삭제
-        const wishlistResponse = await wishlistApi.getAll(token);
+        const wishlistResponse = await wishlistApi.getAll(userId);
         const wishlistItem = wishlistResponse.data.find(
           (item: any) => item.accommodation_id === accommodationId
         );
         if (wishlistItem) {
-          await wishlistApi.remove(token, wishlistItem.id);
+          await wishlistApi.remove(userId, wishlistItem.id);
         }
       } else {
         // 즐겨찾기 추가
-        await wishlistApi.add(token, accommodationId);
+        await wishlistApi.add(userId, {
+          accommodation_id: accommodationId,
+          notify_enabled: true,
+        });
       }
 
-      // 검색 결과 갱신
-      const response = await accommodationApi.search(token, keyword);
-      setSearchResults(response.data);
-    } catch (error) {
+      // React Query 캐시 무효화 (위시리스트 페이지 자동 갱신용)
+      queryClient.invalidateQueries({ queryKey: ["wishlist"] });
+
+      // Optimistic update로 이미 UI가 업데이트되었으므로 fetchSearchResults 불필요
+    } catch (error: any) {
       console.error("즐겨찾기 토글 실패:", error);
+
+      // 에러 발생 시 롤백 (즐겨찾기 상태 + 알림 아이콘)
+      setSearchResults((prev) =>
+        prev.map((acc) =>
+          acc.id === accommodationId
+            ? {
+                ...acc,
+                is_wishlisted: isWishlisted,
+                notify_enabled: isWishlisted ? true : false // 원래 상태로 복구
+              }
+            : acc
+        )
+      );
+
+      // 사용자에게 에러 메시지 표시
+      const errorMessage = error?.response?.data?.detail || "즐겨찾기 처리 중 오류가 발생했습니다.";
+      alert(errorMessage);
+    } finally {
+      setUpdatingWishlist(null);
+    }
+  };
+
+  // 알림 토글 (찜은 유지, 알림만 on/off)
+  const handleNotificationToggle = async (accommodationId: string, currentNotifyEnabled: boolean) => {
+    try {
+      const userId = user?.id || "";
+
+      // Optimistic update: 즉시 UI 업데이트
+      setSearchResults((prev) =>
+        prev.map((acc) =>
+          acc.id === accommodationId
+            ? { ...acc, notify_enabled: !currentNotifyEnabled }
+            : acc
+        )
+      );
+
+      // 해당 숙소의 wishlist 찾기
+      const wishlistResponse = await wishlistApi.getAll(userId);
+      const wishlistItem = wishlistResponse.data.find(
+        (item: any) => item.accommodation_id === accommodationId && item.is_active
+      );
+
+      if (wishlistItem) {
+        // 알림 설정만 업데이트
+        await wishlistApi.update(userId, wishlistItem.id, {
+          notify_enabled: !currentNotifyEnabled,
+        });
+
+        // React Query 캐시 무효화
+        queryClient.invalidateQueries({ queryKey: ["wishlist"] });
+      }
+    } catch (error: any) {
+      console.error("알림 설정 변경 실패:", error);
+
+      // 에러 발생 시 롤백
+      setSearchResults((prev) =>
+        prev.map((acc) =>
+          acc.id === accommodationId
+            ? { ...acc, notify_enabled: currentNotifyEnabled }
+            : acc
+        )
+      );
+
+      const errorMessage = error?.response?.data?.detail || "알림 설정 변경 중 오류가 발생했습니다.";
+      alert(errorMessage);
+    }
+  };
+
+  const handleSortClick = (value: typeof sortBy) => {
+    if (sortBy === value) {
+      setSortOrder((prev) => (prev === "desc" ? "asc" : "desc"));
+    } else {
+      setSortBy(value);
+      setSortOrder("desc");
     }
   };
 
@@ -88,29 +239,118 @@ export default function SearchPage() {
           </div>
         </header>
 
-        <main className="mt-6 flex flex-1 flex-col gap-8">
+        <main className="mt-6 flex flex-1 flex-col gap-6">
           {/* 검색 섹션 */}
-          <section className="rounded-3xl border border-sky-100/70 bg-white/80 p-4 shadow-lg backdrop-blur-lg sm:p-6">
-            <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">
+          <section className="rounded-3xl border border-sky-100/70 bg-white/80 p-5 shadow-lg backdrop-blur-lg">
+            <h1 className="text-lg font-bold text-slate-900 sm:text-xl">
               원하는 숙소를 검색하세요
             </h1>
 
-            <div className="mt-4 flex items-center gap-3 rounded-2xl border border-sky-100/70 bg-sky-50/70 px-4 py-3 shadow-inner">
-              <Search className="h-5 w-5 text-sky-500" />
-              <input
-                type="text"
-                placeholder="지역, 숙소명 검색"
-                value={keyword}
-                onChange={(e) => setKeyword(e.target.value)}
-                className="w-full bg-transparent text-sm text-slate-900 placeholder:text-slate-500 focus:outline-none"
-              />
-            </div>
+            <div className="mt-4 flex flex-col gap-3">
+              {/* 검색어 입력 */}
+              <div className="flex items-center gap-3 rounded-2xl border border-sky-100/70 bg-gradient-to-r from-sky-50/70 to-blue-50/50 px-4 py-3 shadow-sm">
+                <Search className="h-5 w-5 flex-shrink-0 text-sky-600" />
+                <input
+                  type="text"
+                  placeholder="지역, 숙소명 검색"
+                  value={keyword}
+                  onChange={(e) => setKeyword(e.target.value)}
+                  className="w-full bg-transparent text-sm text-slate-900 placeholder:text-slate-500 focus:outline-none"
+                />
+              </div>
 
-            {keyword && (
-              <p className="mt-3 text-xs text-slate-600">
-                &quot;{keyword}&quot; 검색 결과: {searchResults.length}개
-              </p>
-            )}
+              {/* 지역 & 날짜 필터 */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="flex items-center gap-2 rounded-xl border border-sky-100/70 bg-white px-3 py-2.5 shadow-sm">
+                  <MapPin className="h-4 w-4 flex-shrink-0 text-sky-600" />
+                  <select
+                    value={selectedRegion}
+                    onChange={(e) => setSelectedRegion(e.target.value)}
+                    className="w-full bg-transparent text-sm text-slate-800 focus:outline-none"
+                  >
+                    {regionOptions.map((region) => (
+                      <option key={region} value={region}>
+                        {region}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2 rounded-xl border border-sky-100/70 bg-white px-3 py-2.5 shadow-sm">
+                  <Calendar className="h-4 w-4 flex-shrink-0 text-sky-600" />
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                    placeholder={getDefaultDate()}
+                    className="w-full bg-transparent text-xs text-slate-800 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* 정렬 & 필터 옵션 */}
+              <div className="flex flex-col gap-2">
+                {/* 정렬 옵션 */}
+                <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                  <span className="text-xs font-semibold text-slate-700 whitespace-nowrap">정렬</span>
+                  <div className="flex gap-1.5">
+                    {sortOptions.map((option) => {
+                      const isActive = sortBy === option.value;
+                      const orderLabel = isActive ? (sortOrder === "desc" ? "↓" : "↑") : "";
+                      return (
+                        <button
+                          key={option.value}
+                          onClick={() => handleSortClick(option.value)}
+                          className={`rounded-full px-3 py-1.5 text-xs font-medium transition whitespace-nowrap ${
+                            isActive
+                              ? "bg-sky-600 text-white shadow-sm"
+                              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                          }`}
+                        >
+                          {option.label} {orderLabel}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 신청 가능만 체크박스 */}
+                <label className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700 w-fit">
+                  <input
+                    type="checkbox"
+                    checked={availableOnly}
+                    onChange={(e) => setAvailableOnly(e.target.checked)}
+                    className="h-4 w-4 accent-sky-600"
+                  />
+                  <span className="whitespace-nowrap font-medium">신청 가능만 보기</span>
+                </label>
+              </div>
+
+              {/* 검색 결과 요약 */}
+              {(keyword || selectedRegion !== "전체" || selectedDate) && (
+                <div className="mt-1 flex items-center justify-between rounded-lg bg-sky-50 px-3 py-2">
+                  <p className="text-xs text-slate-700 font-medium">
+                    검색 결과 <span className="text-sky-700 font-bold">{searchResults.length}</span>개
+                    {selectedDate && (
+                      <span className="ml-1 text-slate-500">
+                        ({selectedDate})
+                      </span>
+                    )}
+                  </p>
+                  <button
+                    onClick={() => {
+                      setKeyword("");
+                      setSelectedRegion("전체");
+                      setSelectedDate("");
+                      setAvailableOnly(false);
+                    }}
+                    className="text-xs text-sky-600 hover:text-sky-700 font-medium"
+                  >
+                    초기화
+                  </button>
+                </div>
+              )}
+            </div>
           </section>
 
           {/* 검색 결과 */}
@@ -161,8 +401,11 @@ export default function SearchPage() {
                             accommodation.is_wishlisted
                           );
                         }}
+                        disabled={updatingWishlist === accommodation.id}
                         className={`rounded-full p-2 shadow-sm backdrop-blur-sm transition ${
-                          accommodation.is_wishlisted
+                          updatingWishlist === accommodation.id
+                            ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                            : accommodation.is_wishlisted
                             ? "bg-red-500 text-white"
                             : "bg-white/90 text-gray-600 hover:bg-red-50"
                         }`}
@@ -175,7 +418,13 @@ export default function SearchPage() {
                       </button>
                       {accommodation.is_wishlisted && (
                         <button
-                          onClick={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleNotificationToggle(
+                              accommodation.id,
+                              accommodation.notify_enabled
+                            );
+                          }}
                           className={`rounded-full p-2 shadow-sm backdrop-blur-sm transition ${
                             accommodation.notify_enabled
                               ? "bg-blue-500 text-white"
@@ -214,8 +463,36 @@ export default function SearchPage() {
                       </div>
                     )}
 
-                    {/* 평균 점수 */}
-                    {accommodation.avg_score !== null &&
+                    {/* 날짜별 신청 현황 (날짜 선택 시) */}
+                    {selectedDate && accommodation.date && (
+                      <div className="mt-3 space-y-2">
+                        <div className="flex items-center justify-between rounded-lg bg-blue-50 px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <Users className="h-4 w-4 text-blue-600" />
+                            <span className="text-xs text-slate-600">
+                              신청 인원
+                            </span>
+                          </div>
+                          <span className="text-sm font-semibold text-blue-700">
+                            {accommodation.applicants || 0}명
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between rounded-lg bg-amber-50 px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <Star className="h-4 w-4 text-amber-600" />
+                            <span className="text-xs text-slate-600">
+                              신청 점수
+                            </span>
+                          </div>
+                          <span className="text-sm font-semibold text-amber-700">
+                            {accommodation.score ? accommodation.score.toFixed(1) : 0}점
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 평균 점수 (날짜 미선택 시) */}
+                    {!selectedDate && accommodation.avg_score !== null &&
                       accommodation.avg_score !== undefined && (
                         <div className="mt-3 flex items-center justify-between rounded-lg bg-sky-50 px-3 py-2">
                           <span className="text-xs text-slate-600">

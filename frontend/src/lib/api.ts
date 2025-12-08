@@ -163,13 +163,40 @@ export const accommodationApi = {
       params: { limit: limit || 5 },
     }),
 
-  search: (token: string, keyword?: string, limit?: number) =>
+  search: (
+    token: string,
+    params?: {
+      keyword?: string;
+      region?: string;
+      sort_by?: string;
+      sort_order?: "asc" | "desc";
+      available_only?: boolean;
+      date?: string;
+      limit?: number;
+    }
+  ) =>
     createApiClient(token).get("/api/accommodations/search", {
-      params: { keyword, limit: limit || 50 },
+      params: {
+        keyword: params?.keyword,
+        region: params?.region,
+        sort_by: params?.sort_by,
+        sort_order: params?.sort_order,
+        available_only: params?.available_only,
+        date: params?.date,
+        limit: params?.limit || 50,
+      },
     }),
 
   getDetailPage: (id: string) =>
     createApiClient().get(`/api/accommodations/detail/${id}`),
+
+  getRegions: () => createApiClient().get("/api/accommodations/regions"),
+
+  getAiSummary: (id: string) =>
+    createApiClient().get(`/api/accommodations/detail/${id}/ai-summary`),
+
+  getDates: (id: string, params?: { start_date?: string; end_date?: string }) =>
+    createApiClient().get(`/api/accommodations/${id}/dates`, { params }),
 };
 
 // 예약 관련 API
@@ -198,14 +225,28 @@ export const wishlistApi = {
   getAll: (token: string) =>
     createApiClient(token).get("/api/wishlist"),
 
-  add: (token: string, accommodationId: string) =>
-    createApiClient(token).post("/api/wishlist", {
-      accommodation_id: accommodationId,
-      notify_when_bookable: true,
-    }),
+  add: (token: string, data: {
+    accommodation_id: string;
+    desired_date?: string;
+    notify_enabled?: boolean;
+    notification_type?: string;
+    fcm_token?: string;
+  }) =>
+    createApiClient(token).post("/api/wishlist", data),
+
+  update: (token: string, id: string, data: {
+    desired_date?: string;
+    notify_enabled?: boolean;
+    notification_type?: string;
+    fcm_token?: string;
+  }) =>
+    createApiClient(token).patch(`/api/wishlist/${id}`, data),
 
   remove: (token: string, id: string) =>
     createApiClient(token).delete(`/api/wishlist/${id}`),
+
+  removeByAccommodation: (token: string, accommodationId: string) =>
+    createApiClient(token).delete(`/api/wishlist/accommodation/${accommodationId}`),
 };
 
 // 알림 API
