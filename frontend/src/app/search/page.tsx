@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { MapPin, Search, Heart, Bell, BellOff, Calendar, Users, Star } from "lucide-react";
+import { MapPin, Search, Heart, Bell, BellOff, Calendar, Users, Star, Flame } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import BottomNav from "@/components/layout/BottomNav";
@@ -11,6 +11,59 @@ import { accommodationApi, wishlistApi } from "@/lib/api";
 import { SearchAccommodation } from "@/types/accommodation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQueryClient } from "@tanstack/react-query";
+
+// SOL 점수 원형 차트 컴포넌트
+const CircularScore = ({ score }: { score: number }) => {
+  const radius = 28;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (score / 100) * circumference;
+
+  // 점수에 따른 색상 결정
+  const getColor = (score: number) => {
+    if (score >= 80) return "#10b981"; // green-500
+    if (score >= 60) return "#3b82f6"; // blue-500
+    if (score >= 40) return "#f59e0b"; // amber-500
+    return "#ef4444"; // red-500
+  };
+
+  const color = getColor(score);
+
+  return (
+    <div className="relative flex items-center justify-center">
+      <svg className="transform -rotate-90" width="70" height="70">
+        {/* 배경 원 */}
+        <circle
+          cx="35"
+          cy="35"
+          r={radius}
+          stroke="#e5e7eb"
+          strokeWidth="6"
+          fill="none"
+        />
+        {/* 진행 원 */}
+        <circle
+          cx="35"
+          cy="35"
+          r={radius}
+          stroke={color}
+          strokeWidth="6"
+          fill="none"
+          strokeDasharray={circumference}
+          strokeDashoffset={strokeDashoffset}
+          strokeLinecap="round"
+          className="transition-all duration-500"
+        />
+      </svg>
+      {/* 중앙 점수 텍스트 */}
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-lg font-bold" style={{ color }}>
+          {Math.round(score)}
+        </span>
+        <span className="text-[10px] text-slate-500 font-medium">SOL</span>
+      </div>
+    </div>
+  );
+};
 
 export default function SearchPage() {
   const router = useRouter();
@@ -23,7 +76,6 @@ export default function SearchPage() {
     "avg_score"
   );
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
-  const [availableOnly, setAvailableOnly] = useState(false);
   const [selectedDate, setSelectedDate] = useState("");
   const [searchResults, setSearchResults] = useState<SearchAccommodation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -41,10 +93,8 @@ export default function SearchPage() {
     label: string;
   }[] = [
     { value: "avg_score", label: "평균 점수 순" },
-    { value: "name", label: "이름 순" },
-    { value: "wishlist", label: "즐겨찾기" },
-    { value: "price", label: "가격 순" },
     { value: "sol_score", label: "SOL 점수" },
+    { value: "name", label: "이름 순" },
   ];
 
   useEffect(() => {
@@ -72,7 +122,6 @@ export default function SearchPage() {
         region: selectedRegion === "전체" ? undefined : selectedRegion,
         sort_by: sortBy,
         sort_order: sortOrder,
-        available_only: availableOnly,
         date: selectedDate || undefined,
       });
       setSearchResults(response.data);
@@ -81,7 +130,7 @@ export default function SearchPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [user?.id, keyword, selectedRegion, sortBy, sortOrder, availableOnly, selectedDate]);
+  }, [user?.id, keyword, selectedRegion, sortBy, sortOrder, selectedDate]);
 
   // 검색 실행 (조건이 변경될 때마다)
   useEffect(() => {
@@ -225,11 +274,11 @@ export default function SearchPage() {
           <div className="flex items-center gap-3">
             <div className="relative h-12 w-12 overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-sm">
               <Image
-                src="/images/sol-bear.svg"
-                alt="SOL 캐릭터 로고"
+                src="/images/sol_standing.png"
+                alt="SOL 스탠딩 로고"
                 width={48}
-                height={48}
-                className="h-full w-full object-cover"
+                height={57}
+                className="h-full w-full object-contain p-1"
               />
             </div>
             <div>
@@ -237,6 +286,13 @@ export default function SearchPage() {
               <p className="text-xs text-gray-600">지역, 숙소명으로 찾기</p>
             </div>
           </div>
+          <button
+            onClick={() => router.push("/popular")}
+            className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-red-500 to-orange-500 px-3 py-2 text-white shadow-sm transition-all hover:shadow-md hover:scale-105"
+          >
+            <Flame className="h-4 w-4" />
+            <span className="text-xs font-semibold">인기 Top 10</span>
+          </button>
         </header>
 
         <main className="mt-6 flex flex-1 flex-col gap-6">
@@ -288,42 +344,28 @@ export default function SearchPage() {
                 </div>
               </div>
 
-              {/* 정렬 & 필터 옵션 */}
-              <div className="flex flex-col gap-2">
-                {/* 정렬 옵션 */}
-                <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                  <span className="text-xs font-semibold text-slate-700 whitespace-nowrap">정렬</span>
-                  <div className="flex gap-1.5">
-                    {sortOptions.map((option) => {
-                      const isActive = sortBy === option.value;
-                      const orderLabel = isActive ? (sortOrder === "desc" ? "↓" : "↑") : "";
-                      return (
-                        <button
-                          key={option.value}
-                          onClick={() => handleSortClick(option.value)}
-                          className={`rounded-full px-3 py-1.5 text-xs font-medium transition whitespace-nowrap ${
-                            isActive
-                              ? "bg-sky-600 text-white shadow-sm"
-                              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                          }`}
-                        >
-                          {option.label} {orderLabel}
-                        </button>
-                      );
-                    })}
-                  </div>
+              {/* 정렬 옵션 */}
+              <div className="flex items-center gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                <span className="text-xs font-semibold text-slate-700 whitespace-nowrap">정렬</span>
+                <div className="flex gap-1.5">
+                  {sortOptions.map((option) => {
+                    const isActive = sortBy === option.value;
+                    const orderLabel = isActive ? (sortOrder === "desc" ? "↓" : "↑") : "";
+                    return (
+                      <button
+                        key={option.value}
+                        onClick={() => handleSortClick(option.value)}
+                        className={`rounded-full px-3 py-1.5 text-xs font-medium transition whitespace-nowrap ${
+                          isActive
+                            ? "bg-sky-600 text-white shadow-sm"
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        }`}
+                      >
+                        {option.label} {orderLabel}
+                      </button>
+                    );
+                  })}
                 </div>
-
-                {/* 신청 가능만 체크박스 */}
-                <label className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700 w-fit">
-                  <input
-                    type="checkbox"
-                    checked={availableOnly}
-                    onChange={(e) => setAvailableOnly(e.target.checked)}
-                    className="h-4 w-4 accent-sky-600"
-                  />
-                  <span className="whitespace-nowrap font-medium">신청 가능만 보기</span>
-                </label>
               </div>
 
               {/* 검색 결과 요약 */}
@@ -342,7 +384,6 @@ export default function SearchPage() {
                       setKeyword("");
                       setSelectedRegion("전체");
                       setSelectedDate("");
-                      setAvailableOnly(false);
                     }}
                     className="text-xs text-sky-600 hover:text-sky-700 font-medium"
                   >
@@ -443,66 +484,79 @@ export default function SearchPage() {
 
                   {/* 숙소 정보 */}
                   <CardContent className="p-4">
-                    <h3 className="text-base font-semibold text-slate-900">
-                      {accommodation.name}
-                    </h3>
-                    <p className="mt-1 text-xs text-slate-600">
-                      {accommodation.accommodation_type || "숙소"}
-                    </p>
+                    <div className="flex gap-4">
+                      {/* 왼쪽: 숙소 정보 */}
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-base font-semibold text-slate-900">
+                          {accommodation.name}
+                        </h3>
+                        <p className="mt-1 text-xs text-slate-600">
+                          {accommodation.accommodation_type || "숙소"}
+                        </p>
 
-                    {accommodation.summary && accommodation.summary.length > 0 && (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {accommodation.summary.slice(0, 5).map((item, index) => (
-                          <Badge
-                            key={`${accommodation.id}-summary-${index}`}
-                            className="bg-sky-100 text-sky-800 hover:bg-sky-100"
-                          >
-                            {item}
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* 날짜별 신청 현황 (날짜 선택 시) */}
-                    {selectedDate && accommodation.date && (
-                      <div className="mt-3 space-y-2">
-                        <div className="flex items-center justify-between rounded-lg bg-blue-50 px-3 py-2">
-                          <div className="flex items-center gap-2">
-                            <Users className="h-4 w-4 text-blue-600" />
-                            <span className="text-xs text-slate-600">
-                              신청 인원
-                            </span>
+                        {accommodation.summary && accommodation.summary.length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {accommodation.summary.slice(0, 5).map((item, index) => (
+                              <Badge
+                                key={`${accommodation.id}-summary-${index}`}
+                                className="bg-sky-100 text-sky-800 hover:bg-sky-100"
+                              >
+                                {item}
+                              </Badge>
+                            ))}
                           </div>
-                          <span className="text-sm font-semibold text-blue-700">
-                            {accommodation.applicants || 0}명
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between rounded-lg bg-amber-50 px-3 py-2">
-                          <div className="flex items-center gap-2">
-                            <Star className="h-4 w-4 text-amber-600" />
-                            <span className="text-xs text-slate-600">
-                              신청 점수
-                            </span>
-                          </div>
-                          <span className="text-sm font-semibold text-amber-700">
-                            {accommodation.score ? accommodation.score.toFixed(1) : 0}점
-                          </span>
-                        </div>
-                      </div>
-                    )}
+                        )}
 
-                    {/* 평균 점수 (날짜 미선택 시) */}
-                    {!selectedDate && accommodation.avg_score !== null &&
-                      accommodation.avg_score !== undefined && (
-                        <div className="mt-3 flex items-center justify-between rounded-lg bg-sky-50 px-3 py-2">
-                          <span className="text-xs text-slate-600">
-                            평균 점수
-                          </span>
-                          <span className="text-sm font-semibold text-sky-700">
-                            {accommodation.avg_score}점
-                          </span>
+                        {/* 날짜별 신청 현황 (날짜 선택 시) */}
+                        {selectedDate && accommodation.date && (
+                          <div className="mt-3 space-y-2">
+                            <div className="flex items-center justify-between rounded-lg bg-blue-50 px-3 py-2">
+                              <div className="flex items-center gap-2">
+                                <Users className="h-4 w-4 text-blue-600" />
+                                <span className="text-xs text-slate-600">
+                                  신청 인원
+                                </span>
+                              </div>
+                              <span className="text-sm font-semibold text-blue-700">
+                                {accommodation.applicants || 0}명
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between rounded-lg bg-amber-50 px-3 py-2">
+                              <div className="flex items-center gap-2">
+                                <Star className="h-4 w-4 text-amber-600" />
+                                <span className="text-xs text-slate-600">
+                                  신청 점수
+                                </span>
+                              </div>
+                              <span className="text-sm font-semibold text-amber-700">
+                                {accommodation.score ? accommodation.score.toFixed(1) : 0}점
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 평균 점수 (날짜 미선택 시) */}
+                        {!selectedDate && accommodation.avg_score !== null &&
+                          accommodation.avg_score !== undefined && (
+                            <div className="mt-3 flex items-center justify-between rounded-lg bg-sky-50 px-3 py-2">
+                              <span className="text-xs text-slate-600">
+                                평균 점수
+                              </span>
+                              <span className="text-sm font-semibold text-sky-700">
+                                {accommodation.avg_score}점
+                              </span>
+                            </div>
+                          )}
+                      </div>
+
+                      {/* 오른쪽: SOL 점수 원형 차트 */}
+                      {accommodation.sol_score !== null &&
+                        accommodation.sol_score !== undefined && (
+                        <div className="flex items-center justify-center">
+                          <CircularScore score={accommodation.sol_score} />
                         </div>
                       )}
+                    </div>
                   </CardContent>
                 </Card>
               ))

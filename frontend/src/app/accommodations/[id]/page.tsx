@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { accommodationApi } from "@/lib/api";
-import { ArrowLeft, Globe, Heart, MapPin, Phone, Sparkles } from "lucide-react";
+import { ArrowLeft, Building2, Globe, Heart, MapPin, Phone, Sparkles, Users } from "lucide-react";
 import { AccommodationDetail, AvailableDate } from "@/types/accommodation";
 import AccommodationImageCarousel from "@/components/accommodation/AccommodationImageCarousel";
 import AvailableDatePicker from "@/components/accommodation/AvailableDatePicker";
@@ -26,6 +26,7 @@ export default function AccommodationDetailPage() {
   const [selectedDate, setSelectedDate] = useState<AvailableDate | null>(null);
   const [aiSummary, setAiSummary] = useState<string[] | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const showPriorityNotice = !!(selectedDate && selectedDate.applicants >= 1 && selectedDate.score === 0);
 
   useEffect(() => {
     const fetchAccommodation = async () => {
@@ -153,144 +154,170 @@ export default function AccommodationDetailPage() {
         )}
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* 기본 정보 */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">{accommodation.name}</h1>
-
-          <div className="space-y-5">
-            {accommodation.address && (
-              <div className="flex items-start gap-3">
-                <div className="rounded-2xl bg-sky-50 p-2 text-sky-600">
-                  <MapPin className="h-4 w-4" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-gray-500">주소</p>
-                  <p className="text-base text-gray-900">{accommodation.address}</p>
-                </div>
-              </div>
-            )}
-
-            {accommodation.contact && (
-              <div className="flex items-start gap-3">
-                <div className="rounded-2xl bg-sky-50 p-2 text-sky-600">
-                  <Phone className="h-4 w-4" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-gray-500">연락처</p>
-                  <a
-                    href={`tel:${accommodation.contact}`}
-                    className="text-base font-medium text-gray-900 hover:text-blue-600"
-                  >
-                    {accommodation.contact}
-                  </a>
-                </div>
-              </div>
-            )}
-
-            {accommodation.website && (
-              <div className="flex items-start gap-3">
-                <div className="rounded-2xl bg-sky-50 p-2 text-sky-600">
-                  <Globe className="h-4 w-4" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-gray-500">웹사이트</p>
-                  <a
-                    href={accommodation.website}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-base font-medium text-blue-600 hover:underline"
-                  >
-                    {accommodation.website}
-                  </a>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="mt-6 grid gap-4 sm:grid-cols-2">
-            <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
-              <p className="text-sm font-semibold text-gray-500">숙소 타입</p>
-              <p className="mt-2 text-lg font-bold text-gray-900">
-                {accommodation.accommodation_type || "정보 없음"}
-              </p>
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        {/* 헤더 섹션 */}
+        <section className="bg-white rounded-2xl shadow-sm p-6">
+          <div className="flex flex-col gap-4">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 leading-tight">{accommodation.name}</h1>
             </div>
-            <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
-              <p className="text-sm font-semibold text-gray-500">수용 인원</p>
-              <p className="mt-2 text-lg font-bold text-gray-900">
-                {accommodation.capacity ? `${accommodation.capacity}명` : "정보 없음"}
-              </p>
-            </div>
-          </div>
 
-          {accommodation.summary && accommodation.summary.length > 0 && (
-            <div className="mt-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-3">숙소 특징</h2>
-              <div className="flex flex-wrap gap-2">
-                {accommodation.summary.map((item, index) => (
-                  <Badge
-                    key={`${accommodation.id}-feature-${index}`}
-                    className="bg-sky-100 text-sky-800 hover:bg-sky-100"
-                  >
-                    {item}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {(aiLoading || (aiSummary && aiSummary.length > 0)) && (
-            <div className="mt-6 rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-sky-50 p-5 shadow-sm">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="rounded-full bg-indigo-100 p-2 text-indigo-700">
-                  <Sparkles className="h-4 w-4" />
+            <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start">
+              {accommodation.address && (
+                <div className="flex min-w-[240px] flex-1 items-start gap-3">
+                  <div className="rounded-2xl bg-sky-50 p-2 text-sky-600">
+                    <MapPin className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-500">주소</p>
+                    <p className="text-base text-gray-900 leading-relaxed">{accommodation.address}</p>
+                  </div>
                 </div>
-                <h2 className="text-lg font-semibold text-gray-900">
-                  AI 3줄 요약 {aiLoading && <span className="text-xs text-indigo-500">(로딩중)</span>}
-                </h2>
-              </div>
-              {aiSummary && aiSummary.length > 0 ? (
-                <ul className="space-y-2 text-sm text-gray-800 leading-relaxed">
-                  {aiSummary.map((line, idx) => (
-                    <li key={`ai-summary-${idx}`} className="flex gap-2">
-                      <span className="text-indigo-500">•</span>
-                      <span>{line}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-gray-600">요약을 준비하고 있습니다...</p>
+              )}
+
+              {accommodation.contact && (
+                <div className="flex min-w-[200px] flex-1 items-start gap-3">
+                  <div className="rounded-2xl bg-sky-50 p-2 text-sky-600">
+                    <Phone className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-500">연락처</p>
+                    <a
+                      href={`tel:${accommodation.contact}`}
+                      className="text-base font-medium text-gray-900 hover:text-blue-600"
+                    >
+                      {accommodation.contact}
+                    </a>
+                  </div>
+                </div>
               )}
             </div>
-          )}
-        </div>
+          </div>
+        </section>
+
+        {/* AI 요약 */}
+        {(aiLoading || (aiSummary && aiSummary.length > 0)) && (
+          <section
+            aria-live="polite"
+            className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-sky-50 p-5 shadow-sm"
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <div className="rounded-full bg-indigo-100 p-2 text-indigo-700">
+                <Sparkles className="h-4 w-4" />
+              </div>
+              <h2 className="text-lg font-semibold text-gray-900">
+                AI 3줄 요약 {aiLoading && <span className="text-xs text-indigo-500">(로딩중)</span>}
+              </h2>
+            </div>
+            {aiSummary && aiSummary.length > 0 ? (
+              <ul className="space-y-2 text-sm text-gray-800 leading-relaxed">
+                {aiSummary.map((line, idx) => (
+                  <li key={`ai-summary-${idx}`} className="flex gap-2">
+                    <span className="text-indigo-500">•</span>
+                    <span>{line}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-gray-600">요약을 준비하고 있습니다...</p>
+            )}
+          </section>
+        )}
+
+        {/* 숙소 정보 아이콘 그리드 */}
+        <section className="bg-white rounded-2xl shadow-sm p-6">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">숙소 정보</h2>
+              <p className="text-sm text-gray-500">타입과 수용 인원을 한눈에 확인하세요.</p>
+            </div>
+          </div>
+          <div className="mt-5 grid gap-6 sm:grid-cols-2">
+            <div className="flex items-center gap-3">
+              <div className="rounded-full bg-slate-900/90 p-3 text-white shadow-sm">
+                <Building2 className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-gray-600">숙소 타입</p>
+                <p className="text-lg font-bold text-gray-900">
+                  {accommodation.accommodation_type || "정보 없음"}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="rounded-full bg-slate-900/90 p-3 text-white shadow-sm">
+                <Users className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-gray-600">수용 인원</p>
+                <p className="text-lg font-bold text-gray-900">
+                  {accommodation.capacity ? `${accommodation.capacity}명` : "정보 없음"}
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {accommodation.summary && accommodation.summary.length > 0 && (
+          <section className="bg-white rounded-2xl shadow-sm p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-3">숙소 특징</h2>
+            <div className="flex flex-wrap gap-2">
+              {accommodation.summary.map((item, index) => (
+                <Badge key={`${accommodation.id}-feature-${index}`} className="bg-sky-100 text-sky-800 hover:bg-sky-100">
+                  {item}
+                </Badge>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* 예약 가능 날짜 */}
         {accommodation.available_dates && accommodation.available_dates.length > 0 && (
-          <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+          <section className="bg-white rounded-2xl shadow-sm p-6">
             <h2 className="text-xl font-bold text-gray-900 mb-4">예약 가능 날짜</h2>
             <AvailableDatePicker
               dates={accommodation.available_dates}
               selectedDate={selectedDate}
               onSelectDate={setSelectedDate}
             />
-          </div>
+          </section>
         )}
 
         {/* 요일별 평균 점수 바 차트 */}
         {accommodation.weekday_averages && accommodation.weekday_averages.length > 0 && (
-          <div className="bg-white rounded-lg shadow-sm p-6">
+          <section className="bg-white rounded-2xl shadow-sm p-6">
             <h2 className="text-xl font-bold text-gray-900 mb-4">요일별 평균 당첨 점수</h2>
-            <p className="text-sm text-gray-600 mb-4">
-              최근 3개월간 마감된 예약의 요일별 평균 당첨 점수입니다.
-            </p>
+            <p className="text-sm text-gray-600 mb-4">최근 3개월간 마감된 예약의 요일별 평균 당첨 점수입니다.</p>
             <WeekdayAverageChart
               weekdayAverages={accommodation.weekday_averages}
               selectedWeekday={selectedDate?.weekday}
             />
-          </div>
+          </section>
         )}
       </div>
+
+      {showPriorityNotice && (
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-6">
+          <div className="rounded-xl bg-amber-50 border border-amber-100 px-4 py-3 text-sm text-amber-900 leading-relaxed">
+            금융소비자보호 내부통제 업무지침 제 7조 소비자보호그룹 직원에 대한 우대 4항 2호에 따라 해당 우대자가 신청한 경우
+            '0점'으로 표기되며 우선 배정 됩니다.
+          </div>
+        </div>
+      )}
+
+      {accommodation.website && (
+        <footer className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-10">
+          <a
+            href={accommodation.website}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition"
+          >
+            <Globe className="h-4 w-4" />
+            공식 웹사이트 바로가기
+          </a>
+        </footer>
+      )}
 
       <BottomNav activeHref="/search" />
     </div>

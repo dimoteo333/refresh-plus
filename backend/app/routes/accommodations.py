@@ -5,7 +5,7 @@ from app.database import get_db
 from app.models.accommodation import Accommodation
 from app.models.user import User
 from app.models.booking import Booking, BookingStatus
-from app.schemas.accommodation import AccommodationResponse, RandomAccommodationResponse, PopularAccommodationResponse, SearchAccommodationResponse, AccommodationDetailResponse, AvailableDateResponse
+from app.schemas.accommodation import AccommodationResponse, RandomAccommodationResponse, PopularAccommodationResponse, SOLRecommendedAccommodationResponse, SearchAccommodationResponse, AccommodationDetailResponse, AvailableDateResponse
 from app.dependencies import get_current_user
 from app.services.accommodation_service import AccommodationService
 from typing import List, Optional
@@ -134,6 +134,39 @@ async def get_popular_accommodations(
             score=today_acc.score
         )
         for today_acc, acc in results
+    ]
+
+@router.get("/sol-recommended", response_model=List[SOLRecommendedAccommodationResponse])
+async def get_sol_recommended_accommodations(
+    limit: int = Query(5, ge=1, le=10),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    SOL점수 기반 추천 숙소 목록 조회 (인증 불필요)
+    메인 페이지 SOL 추천 숙소 섹션용
+    - limit: 조회할 숙소 개수 (기본값: 5)
+    - average_sol_score 기준 내림차순 정렬
+    """
+
+    # average_sol_score가 있는 숙소만 조회하고 내림차순 정렬
+    query = select(Accommodation).where(
+        Accommodation.average_sol_score.isnot(None)
+    ).order_by(
+        Accommodation.average_sol_score.desc()
+    ).limit(limit)
+
+    result = await db.execute(query)
+    accommodations = result.scalars().all()
+
+    return [
+        SOLRecommendedAccommodationResponse(
+            id=acc.id,
+            name=acc.name,
+            region=acc.region,
+            first_image=acc.images[0] if acc.images and len(acc.images) > 0 else None,
+            average_sol_score=acc.average_sol_score
+        )
+        for acc in accommodations
     ]
 
 @router.get("/search", response_model=List[SearchAccommodationResponse])

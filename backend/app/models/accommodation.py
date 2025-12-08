@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, DateTime, Text, JSON
+from sqlalchemy import Column, String, Integer, DateTime, Text, JSON, Float
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -46,7 +46,10 @@ class Accommodation(Base):
 
     # 숙소 특징 요약 (최대 5개 키워드)
     summary = Column(JSON, nullable=True, default=list)
-    
+
+    # 평균 SOL점수 (해당 숙소의 모든 날짜별 SOL점수 평균, 0~100점)
+    average_sol_score = Column(Float, nullable=True)
+
     # 등록시간
     created_at = Column(DateTime, default=func.now())
     

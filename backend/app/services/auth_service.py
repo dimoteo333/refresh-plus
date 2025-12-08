@@ -21,8 +21,7 @@ from app.utils.jwt import (
 )
 from app.batch.accommodation_crawler import (
     login_to_lulu_lala,
-    navigate_to_reservation_page,
-    FAST_LOGIN_TIMING
+    navigate_to_reservation_page
 )
 from app.config import settings
 
@@ -506,8 +505,7 @@ class AuthService:
                     page,
                     username,
                     password,
-                    settings.LULU_LALA_RSA_PUBLIC_KEY,
-                    timing=FAST_LOGIN_TIMING
+                    settings.LULU_LALA_RSA_PUBLIC_KEY
                 )
 
                 if not success:
@@ -538,8 +536,7 @@ class AuthService:
                 try:
                     nav_success, nav_page = await navigate_to_reservation_page(
                         page,
-                        context,
-                        timing=FAST_LOGIN_TIMING
+                        context
                     )
                     if nav_success and nav_page:
                         shbrefresh_page = nav_page

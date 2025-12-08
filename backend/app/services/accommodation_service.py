@@ -2,7 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, case, exists
 from datetime import datetime, timedelta
 from typing import List, Optional
-from langchain_openai import ChatOpenAI
+from openai import AsyncOpenAI
 from app.models.booking import Booking, BookingStatus
 from app.models.accommodation import Accommodation
 from app.models.today_accommodation import TodayAccommodation
@@ -16,15 +16,13 @@ logger = get_logger(__name__)
 class AccommodationService:
 
     def __init__(self):
-        """Optional LLM 초기화 (OpenAI 키가 있을 때만)"""
+        """Optional OpenAI 클라이언트 초기화 (OpenAI 키가 있을 때만)"""
         openai_api_key = settings.OPENAI_API_KEY
-        self.llm = None
+        self.openai_client = None
         if openai_api_key:
             try:
-                self.llm = ChatOpenAI(
-                    model=settings.RAG_MODEL or "gpt-4o-mini",
-                    temperature=0.2,
-                    openai_api_key=openai_api_key,
+                self.openai_client = AsyncOpenAI(
+                    api_key=openai_api_key,
                 )
             except Exception as e:
                 logger.warning(f"OpenAI 클라이언트 초기화 실패: {e}")
@@ -301,9 +299,8 @@ class AccommodationService:
                 Accommodation.name
             )
         elif normalized_sort == "sol_score":
-            # TODO: sol_score 적용 시 필드에 맞춰 정렬 로직 업데이트
             query = query.order_by(
-                order_direction(func.coalesce(avg_score_subquery.c.avg_score, 0)),
+                order_direction(func.coalesce(Accommodation.average_sol_score, 0)),
                 Accommodation.name
             )
         else:
@@ -357,6 +354,7 @@ class AccommodationService:
                 "summary": summary,
                 "avg_score": round(avg_score, 1) if avg_score else None,
                 "avg_price": round(avg_price, 0) if avg_price else None,
+                "sol_score": round(accommodation.average_sol_score, 1) if accommodation.average_sol_score else None,
                 "is_wishlisted": is_wishlisted,
                 "notify_enabled": notify_enabled,
                 "date": today_date,
@@ -501,8 +499,8 @@ class AccommodationService:
         }
 
     async def get_ai_summary(self, accommodation_id: str, db: AsyncSession) -> Optional[List[str]]:
-        """OpenAI로 3줄 요약 생성 (키 없으면 None, 비동기 별도 호출)"""
-        if not self.llm:
+        """OpenAI Web Search로 3줄 요약 생성 (키 없으면 None, 비동기 별도 호출)"""
+        if not self.openai_client:
             return None
 
         # 숙소 기본 정보 가져오기
@@ -527,25 +525,41 @@ class AccommodationService:
                 for item in weekday_averages[:3]
             )
 
-            prompt = (
-                "인터넷 검색 결과를 참고해 아래 숙소의 장점과 특징(뷰, 부대시설, 접근성 등)을 3줄로 요약하세요. "
-                "실제 검색이 어려우면 제공된 정보만으로 합리적이고 검증 가능한 범위에서만 서술하고, 추측은 피하세요. "
-                "각 문장은 35자 내외 한국어 문장으로, 불릿 없이 줄바꿈으로 구분합니다. "
-                "포인트·규정·가격 등 확실하지 않은 정보는 언급하지 마세요.\n\n"
-                f"숙소명: {accommodation.name}\n"
-                f"지역: {accommodation.region}\n"
-                f"주소: {accommodation.address or '정보 없음'}\n"
-                f"숙소 타입: {accommodation.accommodation_type or '정보 없음'}\n"
-                f"요약 키워드: {(accommodation.summary or [])[:5]}\n"
-                f"수용 인원: {accommodation.capacity}\n"
-                f"예약 가능 정보: {available_info}\n"
-                f"요일별 평균 점수: {avg_scores or '정보 없음'}\n"
+            prompt = f"""
+                인터넷 검색을 통해 아래 숙소의 장점과 특징(뷰, 부대시설, 접근성, 주변 관광지 등)을 3줄로 요약하세요.
+                각 문장은 35자 내외 한국어 문장으로, 불릿 없이 줄바꿈으로 구분합니다.
+                숙소명: {accommodation.name}"""
+
+            # OpenAI Chat Completions API with web_search
+            # response = await self.openai_client.chat.completions.create(
+            #     model=settings.RAG_MODEL or "gpt-4o-mini",
+            #     messages=[
+            #         {
+            #             "role": "system",
+            #             "content": "당신은 숙소 정보를 검색하고 요약하는 전문가입니다. 웹 검색을 통해 정확하고 객관적인 정보를 제공하세요."
+            #         },
+            #         {
+            #             "role": "user",
+            #             "content": prompt
+            #         }
+            #     ],
+            #     temperature=0.2,
+            #     web_search=True  # 웹 검색 활성화
+            # )
+
+            response = await self.openai_client.responses.create(
+                model=settings.RAG_MODEL or "gpt-4o-mini",
+                tools=[
+                    { "type": "web_search" },
+                ],
+                input=prompt
             )
 
-            response = await self.llm.ainvoke(prompt)
-            content = response.content if hasattr(response, "content") else str(response)
-            lines = [line.strip(" -•") for line in content.splitlines() if line.strip()]
-            return lines[:3] if lines else None
+            content = response.output_text
+            if content:
+                lines = [line.strip(" -•") for line in content.splitlines() if line.strip()]
+                return lines[:3] if lines else None
+            return None
         except Exception as e:
             logger.warning(f"AI 요약 생성 실패: {e}")
             return None

@@ -5,15 +5,13 @@ import Link from "next/link";
 import {
   Bell,
   CalendarClock,
-  CreditCard,
-  Heart,
   Hotel,
   Loader2,
   LogOut,
-  NotebookPen,
-  ShieldCheck,
   Sparkles,
   User,
+  Medal,
+  ShieldCheck,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -52,18 +50,6 @@ export default function MyPage() {
   const upcomingBookings = normalizedBookings.filter((booking) =>
     scheduleStatuses.has(booking.status)
   );
-
-  const recentBookings = normalizedBookings.filter((booking) => {
-    if (!booking.created_at) return false;
-    const bookingDate = new Date(booking.created_at);
-    const ninetyDaysAgo = new Date();
-    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-    return bookingDate >= ninetyDaysAgo;
-  });
-
-  const pendingCount = recentBookings.filter((b) => b.status === "pending").length;
-  const wonCount = recentBookings.filter((b) => b.status === "won").length;
-  const lostCount = recentBookings.filter((b) => b.status === "lost").length;
 
   const statusBadgeMap: Record<string, { label: string; className: string }> = {
     won: { label: "당첨", className: "bg-emerald-100 text-emerald-700" },
@@ -107,11 +93,11 @@ export default function MyPage() {
           <div className="flex items-center gap-3">
             <div className="relative h-12 w-12 overflow-hidden rounded-2xl border border-sky-100 bg-white shadow-sm">
               <Image
-                src="/images/sol-bear.svg"
-                alt="SOL 캐릭터 로고"
+                src="/images/sol_standing.png"
+                alt="SOL 스탠딩 로고"
                 width={48}
-                height={48}
-                className="h-full w-full object-cover"
+                height={57}
+                className="h-full w-full object-contain p-1"
               />
             </div>
             <div>
@@ -156,15 +142,15 @@ export default function MyPage() {
 
             <Card className="border-sky-100/80 bg-white/80 shadow-sm backdrop-blur">
               <CardHeader className="flex flex-row items-center gap-3 space-y-0">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-100 text-sky-700">
-                  <CreditCard className="h-5 w-5" />
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50 text-amber-700">
+                  <Medal className="h-5 w-5" />
                 </div>
-                <CardTitle className="text-base text-slate-900">포인트 현황</CardTitle>
+                <CardTitle className="text-base text-slate-900">숙박 점수</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 pt-0 text-sm">
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-700">사용 가능</span>
-                  <span className="font-semibold text-sky-700">{user?.points || 0} P</span>
+                  <span className="text-slate-700">나의 점수</span>
+                  <span className="font-semibold text-amber-700">{user?.points ?? 0}점</span>
                 </div>
                 <div className="flex items-center justify-between text-slate-600">
                   <span>남은 박수</span>
@@ -252,50 +238,6 @@ export default function MyPage() {
                 })
               )}
             </div>
-          </section>
-
-          <section className="grid gap-4 sm:grid-cols-3">
-            <Card className="border-sky-100/80 bg-white/80 shadow-sm backdrop-blur">
-              <CardHeader className="flex flex-row items-center gap-3 space-y-0">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-100 text-sky-700">
-                  <Heart className="h-5 w-5" />
-                </div>
-                <CardTitle className="text-base text-slate-900">선호 태그</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-wrap gap-2 pt-0 text-sm">
-                {["오션뷰", "힐링", "노키즈존", "스파"].map((tag) => (
-                  <Badge key={tag} variant="secondary" className="bg-sky-50 text-sky-700">
-                    #{tag}
-                  </Badge>
-                ))}
-              </CardContent>
-            </Card>
-
-            <Card className="border-sky-100/80 bg-white/80 shadow-sm backdrop-blur">
-              <CardHeader className="flex flex-row items-center gap-3 space-y-0">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-100 text-sky-700">
-                  <NotebookPen className="h-5 w-5" />
-                </div>
-                <CardTitle className="text-base text-slate-900">신청 내역</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 pt-0 text-sm text-slate-700">
-                <p>최근 90일 신청 {recentBookings.length}건</p>
-                <p className="text-slate-600">승인 {wonCount} · 대기 {pendingCount} · 미당첨 {lostCount}</p>
-              </CardContent>
-            </Card>
-
-            <Card className="border-sky-100/80 bg-white/80 shadow-sm backdrop-blur">
-              <CardHeader className="flex flex-row items-center gap-3 space-y-0">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-100 text-sky-700">
-                  <ShieldCheck className="h-5 w-5" />
-                </div>
-                <CardTitle className="text-base text-slate-900">보안 설정</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 pt-0 text-sm text-slate-700">
-                <p>2단계 인증 활성화</p>
-                <p className="text-slate-600">기기 2대 로그인 중</p>
-              </CardContent>
-            </Card>
           </section>
         </main>
       </div>

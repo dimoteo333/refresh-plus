@@ -163,6 +163,11 @@ export const accommodationApi = {
       params: { limit: limit || 5 },
     }),
 
+  getSOLRecommended: (limit?: number) =>
+    createApiClient().get("/api/accommodations/sol-recommended", {
+      params: { limit: limit || 5 },
+    }),
+
   search: (
     token: string,
     params?: {
@@ -256,7 +261,21 @@ export const notificationApi = {
 
   updatePreferences: (token: string, data: any) =>
     createApiClient(token).put("/api/notifications/preferences", data),
+
+  registerDeviceToken: (token: string, data: {
+    channel: 'fcm' | 'web_push';
+    token: string;
+    device_type: 'ios' | 'android' | 'web';
+    ios_version?: string;
+  }) =>
+    createApiClient(token).post("/api/notifications/device-token", data),
+
+  getHistory: (token: string, params?: { limit?: number; offset?: number }) =>
+    createApiClient(token).get("/api/notifications/history", { params }),
 };
+
+// 범용 API 인스턴스 (훅 등에서 사용)
+export const api = createApiClient();
 
 // 챗봇 API
 export const chatbotApi = {

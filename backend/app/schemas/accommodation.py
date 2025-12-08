@@ -65,6 +65,17 @@ class PopularAccommodationResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class SOLRecommendedAccommodationResponse(BaseModel):
+    """SOL점수 기반 추천 숙소 조회용 스키마"""
+    id: str
+    name: str
+    region: str
+    first_image: Optional[str] = None
+    average_sol_score: float
+
+    class Config:
+        from_attributes = True
+
 class SearchAccommodationResponse(BaseModel):
     """검색용 숙소 조회 스키마"""
     id: str
@@ -75,6 +86,7 @@ class SearchAccommodationResponse(BaseModel):
     summary: List[str] = []
     avg_score: Optional[float] = None
     avg_price: Optional[float] = None
+    sol_score: Optional[float] = None
     is_wishlisted: bool = False
     notify_enabled: bool = False
     # 날짜별 정보 (date 파라미터 제공 시)

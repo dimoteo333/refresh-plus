@@ -66,7 +66,7 @@ async def process_daily_ticketing():
                             select(User).where(User.id == booking.user_id)
                         )
                         user = user_result.scalar_one()
-                        user.current_points -= 10
+                        user.points -= 10  # 버그 수정: current_points → points
                         user.successful_bookings += 1
                         booking.points_deducted = 10
                         booking.confirmation_number = (

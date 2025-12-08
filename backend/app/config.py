@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     LULU_LALA_PASSWORD: str | None = None
     LULU_LALA_RSA_PUBLIC_KEY: str | None = None
 
+    # Web Push (VAPID) 설정
+    VAPID_PUBLIC_KEY: str | None = None
+    VAPID_PRIVATE_KEY: str | None = None
+    VAPID_EMAIL: str = "noreply@refreshplus.com"
+
     @field_validator('LULU_LALA_RSA_PUBLIC_KEY', mode='before')
     @classmethod
     def normalize_rsa_key(cls, v):
