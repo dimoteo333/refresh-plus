@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   title: "Refresh Plus - 임직원 숙소 예약",
   description: "포인트 기반 숙소 예약 시스템",
   icons: {
-    icon: "/favicon.ico",
+    icon: "/icons/icon-512x512.png",
   },
 };
 
