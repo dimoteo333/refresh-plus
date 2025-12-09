@@ -50,22 +50,16 @@ class VectorStore:
             )
         )
 
-        # 임베딩 함수 설정
-        if use_openai:
-            # OpenAI 임베딩 사용 (API 키 필요)
-            openai_api_key = os.getenv("OPENAI_API_KEY")
-            if not openai_api_key:
-                raise ValueError("OPENAI_API_KEY 환경 변수가 설정되지 않았습니다.")
 
-            self.embedding_function = embedding_functions.OpenAIEmbeddingFunction(
-                api_key=openai_api_key,
-                model_name="text-embedding-ada-002"
-            )
-        # else:
-        #     # HuggingFace 임베딩 사용 (로컬, 무료)
-        #     self.embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
-        #         model_name="jhgan/ko-sroberta-multitask"  # 한국어 특화 모델
-        #     )
+        # OpenAI 임베딩 사용 (API 키 필요)
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if not openai_api_key:
+            raise ValueError("OPENAI_API_KEY 환경 변수가 설정되지 않았습니다.")
+
+        self.embedding_function = embedding_functions.OpenAIEmbeddingFunction(
+            api_key=openai_api_key,
+            model_name="text-embedding-ada-002"
+        )
 
         # 컬렉션 가져오기 또는 생성
         try:
