@@ -6,18 +6,11 @@
 
 ## 프로젝트 개요
 
-**Refresh Plus**는 신한은행 임직원을 위한 연성소(호텔/펜션/리조트) 예약 플랫폼입니다. 포인트 기반 티켓팅 시스템과 lulu-lala 직접 예약 기능을 제공합니다.
+**Refresh Plus**는 신한은행 임직원을 위한 연성소(호텔/펜션/리조트) 예약 플랫폼입니다. lulu-lala 직접 예약 기능을 제공합니다.
 
 **핵심 비즈니스 로직**:
 
-### 1. 티켓팅 시스템 (내부 예약)
-- 사용자가 예약 신청 시 PENDING 상태로 저장
-- 매일 자정(00:00 KST) `daily_ticketing` 배치 작업이 Railway Cron으로 실행
-- 각 숙소/날짜별로 PENDING 예약을 사용자 점수(`winning_score_at_time`) 순으로 정렬
-- 최고 점수자만 WON으로 변경하고 포인트 차감, 나머지는 LOST로 변경
-- WON 상태일 때만 포인트가 차감됨 (PENDING/LOST는 차감 안됨)
-
-### 2. 직접 예약 시스템 (lulu-lala 연동)
+### 직접 예약 시스템 (lulu-lala 연동)
 - 사용자가 숙소 상세 페이지에서 "예약하기" 버튼 클릭
 - **시간 제한**: 08:00~21:00 (KST) 사이에만 예약 가능
   - 20시 이후: "예약 가능 시간이 얼마 남지 않았습니다" 경고
@@ -56,7 +49,6 @@ alembic revision --autogenerate -m "description"
 alembic upgrade head
 
 # 배치 작업 로컬 테스트
-python backend/batch/run_daily_ticketing.py
 python backend/batch/run_accommodation_crawler.py
 python backend/batch/run_faq_crawler.py
 python backend/batch/run_today_accommodation_realtime.py
@@ -131,23 +123,17 @@ railway open
 ### 예약 상태 머신
 
 ```
-[티켓팅 시스템]
-사용자가 예약 생성 → PENDING
-                         ↓
-매일 00:00 배치 작업 실행 → WON (최고 점수) 또는 LOST
-                         ↓
-WON 예약 → COMPLETED (체크아웃 날짜 이후)
-
 [직접 예약 시스템]
 사용자가 "예약하기" 클릭 → lulu-lala API 호출 (08:00-21:00 KST만)
                            ↓
                    HTTP 302 응답 확인
                            ↓
                    즉시 WON 상태로 생성
+                           ↓
+                   포인트 10점 즉시 차감
 ```
 
 **중요**:
-- 티켓팅 예약은 PENDING 상태로 시작하며, 배치 작업이 WON으로 변경할 때만 포인트 차감
 - 직접 예약은 성공 시 즉시 WON 상태로 생성되며 포인트 10점 즉시 차감
 
 ### 인증 흐름
@@ -181,13 +167,11 @@ Component → Custom Hook (useAccommodations, useBookings, useWishlist)
 ### 배치 작업 (Railway Cron)
 
 `backend/app/batch/`에 위치:
-- `daily_ticketing.py`: 매일 00:00 KST (15:00 UTC) 실행, PENDING 예약 처리
 - `accommodation_crawler.py`: 매일 01:00 KST 실행, 전체 숙소 정보 크롤링
 - `faq_crawler.py`: 매일 02:00 KST 실행, FAQ 정보 크롤링
 - `today_accommodation_realtime.py`: 매시간 실행, 오늘자 실시간 신청 현황 갱신
 
 **배포**: Railway Cron 서비스가 독립 실행 스크립트를 트리거합니다:
-- `backend/batch/run_daily_ticketing.py`
 - `backend/batch/run_accommodation_crawler.py`
 - `backend/batch/run_faq_crawler.py`
 - `backend/batch/run_today_accommodation_realtime.py`
@@ -259,9 +243,6 @@ Railway Project
 ├── Service: Backend API
 │   ├── Start: uvicorn app.main:app
 │   └── Port: $PORT (자동 할당)
-├── Service: Daily Ticketing Cron
-│   ├── Schedule: 0 15 * * * (00:00 KST)
-│   └── Command: python batch/run_daily_ticketing.py
 ├── Service: Accommodation Crawler Cron
 │   ├── Schedule: 0 16 * * * (01:00 KST)
 │   └── Command: python batch/run_accommodation_crawler.py
@@ -349,14 +330,14 @@ Cron 작업의 경우, 데이터베이스 연결 및 API 접근을 보장하기 
 ### 주요 테이블
 
 - **Users**:
-  - `points`: 사용 가능한 포인트 (WON 상태일 때만 차감)
+  - `points`: 사용 가능한 포인트 (예약 성공 시 차감)
   - `session_cookies`: lulu-lala 세션 쿠키 (JSON, 직접 예약용)
   - `last_point_recovery`: 포인트 회복 타이밍용
 
 - **Bookings**:
-  - `winning_score_at_time`: 예약 생성 시점의 사용자 점수 (배치 작업 정렬용)
-  - `status`: PENDING, WON, LOST, COMPLETED, CANCELLED
+  - `status`: WON, COMPLETED, CANCELLED
   - `is_from_crawler`: 크롤링 예약 vs 직접 예약 구분
+  - `points_deducted`: 차감된 포인트 (기본값: 10)
 
 - **Accommodations**:
   - `id`: lulu-lala URL에 사용
@@ -594,7 +575,6 @@ FAQ: 독립 테이블 (관계 없음)
 - 초기 포인트: `MAX_POINTS` (기본값: 100)
 - 예약당 차감: `POINTS_PER_BOOKING` (기본값: 10)
 - 회복 주기: `POINTS_RECOVERY_HOURS` (기본값: 24시간)
-- WON 상태일 때만 차감, PENDING/LOST는 차감 안됨
 - 직접 예약 성공 시 즉시 10점 차감
 
 ### 주요 의존성
