@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings
 from typing import List
 from pydantic import field_validator
+import json
 
 class Settings(BaseSettings):
     # 기본 설정
@@ -31,10 +32,23 @@ class Settings(BaseSettings):
     SENTRY_DSN: str | None = None
 
     # CORS
-    CORS_ORIGINS: List[str] = [
+    CORS_ORIGINS: str | List[str] = [
         "http://localhost:3000",
         "http://localhost:8000",
     ]
+
+    @field_validator('CORS_ORIGINS', mode='before')
+    @classmethod
+    def parse_cors_origins(cls, v):
+        """CORS_ORIGINS를 JSON 문자열 또는 리스트로 파싱"""
+        if isinstance(v, str):
+            try:
+                # JSON 배열 형태의 문자열인 경우 파싱
+                return json.loads(v)
+            except json.JSONDecodeError:
+                # 단일 URL 문자열인 경우 리스트로 변환
+                return [v]
+        return v
 
     # 애플리케이션 설정
     MAX_WISHLIST_ITEMS: int = 20
