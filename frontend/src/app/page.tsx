@@ -3,15 +3,18 @@
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   Bell,
   Bot,
   Compass,
+  LogIn,
+  LogOut,
+  Loader2,
   PlaneTakeoff,
   ShieldCheck,
   Sparkles,
   Star,
-  Menu,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -61,6 +64,7 @@ export default function Home() {
   const [randomAccommodations, setRandomAccommodations] = useState<RandomAccommodation[]>([]);
   const [popularAccommodations, setPopularAccommodations] = useState<PopularAccommodation[]>([]);
   const [solRecommendedAccommodations, setSOLRecommendedAccommodations] = useState<SOLRecommendedAccommodation[]>([]);
+  const { isAuthenticated, isLoading, logout } = useAuth();
 
   useEffect(() => {
     const fetchRandomAccommodations = async () => {
@@ -110,20 +114,30 @@ export default function Home() {
             />
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
-            <button
-              type="button"
-              className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-900 transition hover:bg-sky-100/40"
-              aria-label="알림"
-            >
-              <Bell className="h-6 w-6" />
-            </button>
-            <button
-              type="button"
-              className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-900 transition hover:bg-sky-100/40"
-              aria-label="전체 메뉴"
-            >
-              <Menu className="h-6 w-6" />
-            </button>
+            {isLoading ? (
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/80 text-slate-400 shadow-sm">
+                <Loader2 className="h-5 w-5 animate-spin" />
+              </div>
+            ) : isAuthenticated ? (
+              <button
+                type="button"
+                onClick={logout}
+                className="flex items-center gap-2 rounded-xl px-2 py-1.5 text-slate-800 transition hover:bg-slate-100"
+                aria-label="로그아웃"
+              >
+                <LogOut className="h-6 w-6" />
+                <span className="hidden text-sm font-semibold sm:inline text-slate-900">로그아웃</span>
+              </button>
+            ) : (
+              <Link
+                href="/login"
+                className="flex items-center gap-2 rounded-xl px-2 py-1.5 text-slate-800 transition hover:bg-slate-100"
+                aria-label="로그인 페이지로 이동"
+              >
+                <LogIn className="h-6 w-6" />
+                <span className="hidden text-sm font-semibold sm:inline text-slate-900">로그인</span>
+              </Link>
+            )}
           </div>
         </header>
 

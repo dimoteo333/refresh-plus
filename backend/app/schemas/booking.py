@@ -40,3 +40,15 @@ class BookingResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class DirectReservationCreate(BaseModel):
+    """lulu-lala 직접 예약 요청"""
+    accommodation_id: str
+    check_in_date: str  # YYYY-MM-DD 형식
+    phone_number: str   # 010-1234-5678 형식
+
+class DirectReservationResponse(BaseModel):
+    """lulu-lala 직접 예약 응답"""
+    success: bool
+    booking_id: str
+    message: str

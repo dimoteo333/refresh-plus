@@ -57,10 +57,20 @@ async def login_to_lulu_lala(
     Playwright UI 기반 로그인 (명시적 대기)
     """
     try:
+        # 이미지 및 불필요한 리소스 차단으로 속도 향상
+        async def block_resources(route):
+            if route.request.resource_type in ['image', 'stylesheet', 'font', 'media']:
+                await route.abort()
+            else:
+                await route.continue_()
+
+        await page.route("**/*", block_resources)
+        logger.info("Resource blocking enabled (image, stylesheet, font, media)")
+
         logger.info("Navigating to login page: %s", LULU_LALA_LOGIN_URL)
         await page.goto(LULU_LALA_LOGIN_URL, wait_until="domcontentloaded")
-        await page.wait_for_selector("input#username", timeout=8000)
-        await page.wait_for_selector("input#password", timeout=8000)
+        await page.wait_for_selector("input#username", timeout=500)
+        await page.wait_for_selector("input#password", timeout=500)
 
         username_input = page.locator("input#username")
         password_input = page.locator("input#password")
@@ -101,7 +111,7 @@ async def login_to_lulu_lala(
 
         if not login_triggered:
             try:
-                await page.locator("button[type='submit']").click(timeout=5000)
+                await page.locator("button[type='submit']").click(timeout=1000)
                 login_triggered = True
             except Exception:
                 pass
@@ -109,9 +119,9 @@ async def login_to_lulu_lala(
         if await _wait_for_login_state(page):
             # 로그인 성공 후 페이지가 완전히 로드될 때까지 대기
             try:
-                await page.wait_for_load_state("networkidle", timeout=5000)
+                await page.wait_for_load_state("networkidle", timeout=1500)
                 # 추가로 JavaScript 실행 완료 대기
-                await page.wait_for_timeout(2000)
+                await page.wait_for_timeout(800)
                 logger.info("Login successful, page fully loaded")
             except Exception as e:
                 logger.warning(f"Page load timeout after login: {e}")
@@ -222,7 +232,7 @@ async def navigate_to_reservation_page(page: Page, context: BrowserContext) -> t
         for _ in range(30):
             await page.wait_for_timeout(500)
             if shbrefresh_page:
-                await shbrefresh_page.wait_for_load_state("networkidle", timeout=10000)
+                await shbrefresh_page.wait_for_load_state("networkidle", timeout=2000)
                 return True, shbrefresh_page
 
             current_url = page.url
@@ -236,7 +246,7 @@ async def navigate_to_reservation_page(page: Page, context: BrowserContext) -> t
                         p_url = p.url
                         if "shbrefresh" in p_url.lower() or "interparkb2b" in p_url.lower():
                             if "error" not in p_url.lower() and "login" not in p_url.lower():
-                                await p.wait_for_load_state("networkidle", timeout=10000)
+                                await p.wait_for_load_state("networkidle", timeout=2000)
                                 return True, p
                     except Exception:
                         continue

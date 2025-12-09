@@ -16,7 +16,7 @@ class UserUpdate(BaseModel):
 
 class UserResponse(UserBase):
     id: str
-    current_points: int
+    points: int
     max_points: int
     total_bookings: int
     successful_bookings: int

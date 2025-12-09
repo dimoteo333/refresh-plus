@@ -47,7 +47,7 @@ export default function MyPage() {
 
   const statusBadgeMap: Record<string, { label: string; className: string }> = {
     won: { label: "당첨", className: "bg-emerald-100 text-emerald-700" },
-    pending: { label: "반려", className: "bg-rose-100 text-rose-700" },
+    pending: { label: "예약신청", className: "bg-blue-100 text-blue-700" },
     cancelled: { label: "취소", className: "bg-rose-100 text-rose-700" },
     completed: { label: "완료", className: "bg-slate-100 text-slate-700" },
   };

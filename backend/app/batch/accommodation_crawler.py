@@ -331,12 +331,95 @@ async def crawl_individual_accommodation(
         acc_id = acc_id_match.group(1)
         logger.info(f"  Accommodation ID: {acc_id}")
 
+        # rbroomNo 값 초기화 (나중에 추출)
+        rb_room_no = None
+
         # 숙소 상세 페이지로 이동
         await page.goto(acc_url, wait_until="networkidle", timeout=30000)
         await page.wait_for_timeout(2000)
 
         # 페이지 전체 텍스트 가져오기 (디버깅 및 정보 추출용)
         page_text = await page.inner_text("body")
+
+        # rbroomNo 값 추출 (data 속성에서 찾기)
+        logger.info(f"  Extracting rbroomNo...")
+        try:
+            # 방법 1: data-rbroom-no 또는 data-rbroomno 속성을 가진 요소 찾기
+            rbroom_selectors = [
+                "[data-rbroom-no]",
+                "[data-rbroomno]",
+                "[data-rbroomNo]",
+                "[data-rb-room-no]"
+            ]
+
+            for selector in rbroom_selectors:
+                elements = await page.query_selector_all(selector)
+                if elements:
+                    for elem in elements:
+                        # 여러 가능한 속성명 시도
+                        for attr_name in ["data-rbroom-no", "data-rbroomno", "data-rbroomNo", "data-rb-room-no"]:
+                            try:
+                                value = await elem.get_attribute(attr_name)
+                                if value and value.strip():
+                                    rb_room_no = value.strip()
+                                    logger.info(f"    Found rbroomNo: {rb_room_no} (from {attr_name})")
+                                    break
+                            except:
+                                continue
+                        if rb_room_no:
+                            break
+                if rb_room_no:
+                    break
+
+            # 방법 2: JavaScript로 window 객체나 전역 변수에서 찾기
+            if not rb_room_no:
+                try:
+                    rb_room_no = await page.evaluate("""
+                        () => {
+                            // window 객체에서 rbroomNo 찾기
+                            if (window.rbroomNo) return window.rbroomNo;
+                            if (window.rbRoomNo) return window.rbRoomNo;
+
+                            // data 속성을 가진 모든 요소 검색
+                            const elements = document.querySelectorAll('[data-rbroom-no], [data-rbroomno], [data-rbroomNo]');
+                            for (const elem of elements) {
+                                const value = elem.getAttribute('data-rbroom-no') ||
+                                            elem.getAttribute('data-rbroomno') ||
+                                            elem.getAttribute('data-rbroomNo');
+                                if (value) return value;
+                            }
+
+                            return null;
+                        }
+                    """)
+                    if rb_room_no:
+                        logger.info(f"    Found rbroomNo via JavaScript: {rb_room_no}")
+                except Exception as js_error:
+                    logger.debug(f"    JavaScript evaluation failed: {str(js_error)}")
+
+            # 방법 3: HTML 소스에서 정규식으로 찾기 (최후의 수단)
+            if not rb_room_no:
+                html_content = await page.content()
+                rbroom_patterns = [
+                    r'data-rbroom-no["\']?\s*=\s*["\']([^"\']+)["\']',
+                    r'data-rbroomno["\']?\s*=\s*["\']([^"\']+)["\']',
+                    r'data-rbroomNo["\']?\s*=\s*["\']([^"\']+)["\']',
+                    r'rbroomNo["\']?\s*:\s*["\']([^"\']+)["\']',
+                    r'"rbroomNo"\s*:\s*"([^"]+)"',
+                ]
+
+                for pattern in rbroom_patterns:
+                    match = re.search(pattern, html_content, re.IGNORECASE)
+                    if match:
+                        rb_room_no = match.group(1).strip()
+                        logger.info(f"    Found rbroomNo via regex: {rb_room_no}")
+                        break
+
+            if not rb_room_no:
+                logger.warning(f"    ⚠️  Could not find rbroomNo for {acc_url}")
+
+        except Exception as e:
+            logger.warning(f"    Error extracting rbroomNo: {str(e)}")
 
         # 숙소 이름 추출 (여러 방법 시도)
         name = "Unknown"
@@ -905,6 +988,7 @@ async def crawl_individual_accommodation(
         if name and name != "Unknown":
             accommodation_data = {
                 "id": acc_id,  # URL에서 추출한 실제 ID
+                "accommodation_id": rb_room_no,  # rbroomNo 값 (실제 숙소 식별자)
                 "name": name,
                 "accommodation_type": accommodation_type,
                 "address": address,  # 주소
@@ -919,6 +1003,8 @@ async def crawl_individual_accommodation(
 
             accommodations.append(accommodation_data)
             logger.info(f"    ✓ Extracted: {name} (ID: {acc_id})")
+            if rb_room_no:
+                logger.info(f"      Accommodation ID (rbroomNo): {rb_room_no}")
             if address:
                 logger.info(f"      Address: {address}")
             if contact:
@@ -1164,6 +1250,9 @@ async def save_accommodations_to_db(accommodations: List[Dict]):
                     existing_acc.address = acc_data.get("address")
                     existing_acc.contact = acc_data.get("contact")
                     existing_acc.website = acc_data.get("homepage")
+                    # accommodation_id 업데이트 (rbroomNo)
+                    if acc_data.get("accommodation_id"):
+                        existing_acc.accommodation_id = acc_data.get("accommodation_id")
                     if acc_data.get("accommodation_type"):
                         existing_acc.accommodation_type = acc_data.get("accommodation_type")
                     capacity_value = acc_data.get("capacity")
@@ -1189,6 +1278,7 @@ async def save_accommodations_to_db(accommodations: List[Dict]):
                     # 새로 생성
                     new_acc = Accommodation(
                         id=acc_id,
+                        accommodation_id=acc_data.get("accommodation_id"),  # rbroomNo 값
                         name=acc_data["name"],
                         region=acc_data.get("region", "Unknown"),
                         address=acc_data.get("address"),

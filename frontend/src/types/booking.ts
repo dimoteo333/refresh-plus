@@ -30,3 +30,15 @@ export interface BookingCreate {
   check_out: string;
   guests: number;
 }
+
+export interface DirectReservationCreate {
+  accommodation_id: string;
+  check_in_date: string;
+  phone_number: string;
+}
+
+export interface DirectReservationResponse {
+  success: boolean;
+  booking_id: string;
+  message: string;
+}
