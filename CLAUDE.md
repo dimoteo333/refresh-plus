@@ -6,14 +6,25 @@
 
 ## 프로젝트 개요
 
-**Refresh Plus**는 신한은행 임직원을 위한 연성소(호텔/펜션/리조트) 예약 플랫폼입니다. 포인트 기반 티켓팅 시스템을 사용하여 공정하게 숙소를 배정합니다.
+**Refresh Plus**는 신한은행 임직원을 위한 연성소(호텔/펜션/리조트) 예약 플랫폼입니다. 포인트 기반 티켓팅 시스템과 lulu-lala 직접 예약 기능을 제공합니다.
 
 **핵심 비즈니스 로직**:
+
+### 1. 티켓팅 시스템 (내부 예약)
 - 사용자가 예약 신청 시 PENDING 상태로 저장
 - 매일 자정(00:00 KST) `daily_ticketing` 배치 작업이 Railway Cron으로 실행
 - 각 숙소/날짜별로 PENDING 예약을 사용자 점수(`winning_score_at_time`) 순으로 정렬
 - 최고 점수자만 WON으로 변경하고 포인트 차감, 나머지는 LOST로 변경
 - WON 상태일 때만 포인트가 차감됨 (PENDING/LOST는 차감 안됨)
+
+### 2. 직접 예약 시스템 (lulu-lala 연동)
+- 사용자가 숙소 상세 페이지에서 "예약하기" 버튼 클릭
+- **시간 제한**: 08:00~21:00 (KST) 사이에만 예약 가능
+  - 20시 이후: "예약 가능 시간이 얼마 남지 않았습니다" 경고
+  - 08시 이전/21시 이후: 예약 버튼 비활성화
+- lulu-lala API에 POST 요청 전송 (사용자의 session_cookies 사용)
+- **성공 조건**: HTTP 302 (Redirect) 응답
+- 성공 시 즉시 WON 상태로 Booking 생성 및 포인트 10점 차감
 
 **크롤링 시스템**:
 - 기존 웹사이트(lulu-lala.zzzmobile.co.kr)에서 숙소 정보, FAQ, 실시간 신청 현황을 Playwright로 크롤링
@@ -120,26 +131,36 @@ railway open
 ### 예약 상태 머신
 
 ```
+[티켓팅 시스템]
 사용자가 예약 생성 → PENDING
                          ↓
 매일 00:00 배치 작업 실행 → WON (최고 점수) 또는 LOST
                          ↓
 WON 예약 → COMPLETED (체크아웃 날짜 이후)
+
+[직접 예약 시스템]
+사용자가 "예약하기" 클릭 → lulu-lala API 호출 (08:00-21:00 KST만)
+                           ↓
+                   HTTP 302 응답 확인
+                           ↓
+                   즉시 WON 상태로 생성
 ```
 
-**중요**: 예약은 PENDING 상태로 시작합니다. 포인트는 즉시 차감되지 않으며, 배치 작업이 상태를 WON으로 변경할 때만 차감됩니다.
+**중요**:
+- 티켓팅 예약은 PENDING 상태로 시작하며, 배치 작업이 WON으로 변경할 때만 포인트 차감
+- 직접 예약은 성공 시 즉시 WON 상태로 생성되며 포인트 10점 즉시 차감
 
 ### 인증 흐름
 
-- Frontend: 사용자 ID를 HTTP 헤더(`X-User-ID`)로 전송
-- Backend: `app/dependencies.py::get_current_user()`가 헤더에서 사용자 ID를 추출하여 DB 조회
+- Frontend: JWT 토큰을 Authorization 헤더로 전송 (Bearer 토큰)
+- Backend: `app/dependencies.py::get_current_user()`가 JWT 토큰을 검증하여 사용자 조회
 - 모든 보호된 라우트는 `Depends(get_current_user)` 사용
+- 레거시 호환: X-User-ID 헤더도 지원
 
 ### 알림 시스템
 
-이중 채널 알림:
-- **Android**: Firebase Cloud Messaging (`app/integrations/firebase_service.py`)
-- **iOS/PC**: Kakao Talk Channel API (`app/integrations/kakao_service.py`)
+푸시 알림:
+- **Android/iOS/Web**: Firebase Cloud Messaging (`app/integrations/firebase_service.py`)
 
 서비스가 알림 통합을 직접 호출합니다. 현재 이벤트 큐 시스템은 구현되지 않았습니다.
 
@@ -196,6 +217,38 @@ Component → Custom Hook (useAccommodations, useBookings, useWishlist)
 **크롤링 인증**:
 - `LULU_LALA_USERNAME`, `LULU_LALA_PASSWORD`: 로그인 정보
 - `LULU_LALA_RSA_PUBLIC_KEY`: 비밀번호 암호화용 RSA 공개키
+
+### 직접 예약 시스템
+
+**API 엔드포인트**: `POST /api/bookings/direct-reserve`
+
+**프로세스**:
+1. 시간 제한 체크 (08:00-21:00 KST)
+2. 사용자의 `session_cookies` 확인
+3. lulu-lala API에 POST 요청
+   - URL: `https://shbrefresh.interparkb2b.co.kr/condo/{accommodation.id}/reserve`
+   - Body (x-www-form-urlencoded):
+     - `bankerHp`: 연락처 (숫자만)
+     - `submitFlag`: N
+     - `checkinDate`: YYYY-MM-DD
+     - `checkoutDate`: YYYY-MM-DD
+     - `rbroomNo`: accommodation_id 칼럼 값
+     - `rblockDate`: YYYY-MM-DD
+     - `hp01`, `hp02`, `hp03`: 연락처 분리 (010-1234-5678)
+     - `privacy_check`: Y
+4. HTTP 302 응답 확인 (성공)
+5. Booking 생성 (WON 상태, 포인트 10점 차감)
+
+**시간 제한**:
+- 허용: 08:00 ~ 21:00 (KST)
+- 경고: 20:00 이후 "예약 가능 시간이 얼마 남지 않았습니다."
+- 차단: 08:00 이전 또는 21:00 이후 버튼 비활성화
+
+**Frontend 구현**:
+- `DirectReservationModal.tsx`: 예약 모달 컴포넌트
+- 연락처 입력: 010 - [4자리] - [4자리]
+- 개인정보 동의 체크박스 필수
+- 실시간 시간 체크 (1분마다)
 
 ---
 
@@ -266,7 +319,6 @@ Vercel Project
 
 - `DATABASE_URL`: PostgreSQL/Turso 연결 문자열
 - `FIREBASE_CREDENTIALS_PATH`: 푸시 알림용 (또는 FIREBASE_CREDENTIALS_BASE64 사용)
-- `KAKAO_REST_API_KEY`: 카카오톡 통합용
 - `LULU_LALA_USERNAME`: 크롤링 로그인 사용자명
 - `LULU_LALA_PASSWORD`: 크롤링 로그인 비밀번호
 - `LULU_LALA_RSA_PUBLIC_KEY`: 비밀번호 암호화용 RSA 공개키
@@ -296,9 +348,21 @@ Cron 작업의 경우, 데이터베이스 연결 및 API 접근을 보장하기 
 
 ### 주요 테이블
 
-- **Users**: `current_points`는 사용 가능한 포인트를 추적, `last_point_recovery`는 회복 타이밍용
-- **Bookings**: `winning_score_at_time`은 예약 생성 시점의 사용자 점수를 저장 (배치 작업 정렬용)
-- **Accommodations**: `available_rooms`는 수동 관리, 자동 차감 안됨
+- **Users**:
+  - `points`: 사용 가능한 포인트 (WON 상태일 때만 차감)
+  - `session_cookies`: lulu-lala 세션 쿠키 (JSON, 직접 예약용)
+  - `last_point_recovery`: 포인트 회복 타이밍용
+
+- **Bookings**:
+  - `winning_score_at_time`: 예약 생성 시점의 사용자 점수 (배치 작업 정렬용)
+  - `status`: PENDING, WON, LOST, COMPLETED, CANCELLED
+  - `is_from_crawler`: 크롤링 예약 vs 직접 예약 구분
+
+- **Accommodations**:
+  - `id`: lulu-lala URL에 사용
+  - `accommodation_id`: lulu-lala API Body (rbroomNo)에 사용
+  - `available_rooms`: 수동 관리, 자동 차감 안됨
+
 - **AccommodationDate**: 크롤링한 날짜별 숙소 정보 (점수, 신청 인원, 상태)
 - **TodayAccommodation**: 오늘자 실시간 신청 현황 (시간당 갱신)
 - **FAQ**: 크롤링한 FAQ 질문/답변 (RAG 챗봇용)
@@ -316,10 +380,6 @@ Firebase 인증 정보가 필요합니다. Railway용 두 가지 옵션:
 
 `FirebaseService.__init__()`에서 한 번만 초기화하세요. 다중 초기화 시도는 실패합니다.
 
-### Kakao Talk API
-
-bearer 토큰 인증과 함께 REST API를 사용합니다. 메시지 형식은 Kakao의 템플릿 객체 구조를 따릅니다.
-
 ### Playwright 크롤링
 
 - 로그인 시 RSA 공개키로 비밀번호 암호화
@@ -327,13 +387,21 @@ bearer 토큰 인증과 함께 REST API를 사용합니다. 메시지 형식은 
 - `data-role="roomInfo"`, `data-rblockdate` 등의 data 속성으로 정보 추출
 - 페이지 로딩 대기: `wait_for_timeout()`, `wait_for_load_state("networkidle")`
 
+### lulu-lala 직접 예약 통합
+
+- 사용자의 `session_cookies`를 쿠키로 전송
+- x-www-form-urlencoded 형식으로 데이터 전송
+- HTTP 302 응답 = 성공
+- 시간 제한: 08:00-21:00 KST (pytz 사용)
+- 전화번호 파싱: `app/utils/phone_utils.py`
+
 ---
 
 ## 테스트 접근법
 
 - Backend 테스트는 async 지원과 함께 pytest 사용
 - API 엔드포인트 테스트에는 httpx의 `AsyncClient` 사용
-- 테스트에서 외부 서비스(Firebase, Kakao, Playwright) 모킹
+- 테스트에서 외부 서비스(Firebase, Playwright, lulu-lala API) 모킹
 - Railway cron에 배포하기 전에 배치 작업을 로컬에서 테스트
 
 ---
@@ -386,6 +454,33 @@ def encrypt_rsa(plaintext: str, public_key_pem: str) -> str:
     cipher = PKCS1_v1_5.new(key)
     encrypted = cipher.encrypt(plaintext.encode('utf-8'))
     return base64.b64encode(encrypted).decode('utf-8')
+```
+
+### 시간 제한 체크 (KST)
+
+```python
+from datetime import datetime
+import pytz
+
+def is_reservation_time_allowed() -> bool:
+    """예약 가능 시간 체크 (08:00-21:00 KST)"""
+    kst = pytz.timezone("Asia/Seoul")
+    now = datetime.now(kst)
+    hour = now.hour
+    return 8 <= hour < 21
+```
+
+### 전화번호 파싱
+
+```python
+import re
+
+def parse_phone_number(phone: str) -> tuple[str, str, str]:
+    """010-1234-5678 → ('010', '1234', '5678')"""
+    digits = re.sub(r'\D', '', phone)
+    if len(digits) != 11 or not digits.startswith('010'):
+        raise ValueError("올바른 전화번호 형식이 아닙니다.")
+    return digits[:3], digits[3:7], digits[7:11]
 ```
 
 ---
@@ -462,6 +557,13 @@ def encrypt_rsa(plaintext: str, public_key_pem: str) -> str:
 - Playwright 브라우저 설치: `playwright install chromium`
 - Railway 대시보드 → Logs에서 로그 확인
 
+### 직접 예약 실패
+
+- 시간 제한 확인 (08:00-21:00 KST)
+- `session_cookies` 만료 여부 확인
+- HTTP 302 응답이 아닌 경우 lulu-lala API 오류
+- 전화번호 형식 확인 (010-XXXX-XXXX)
+
 ---
 
 ## 추가 참고사항
@@ -493,6 +595,24 @@ FAQ: 독립 테이블 (관계 없음)
 - 예약당 차감: `POINTS_PER_BOOKING` (기본값: 10)
 - 회복 주기: `POINTS_RECOVERY_HOURS` (기본값: 24시간)
 - WON 상태일 때만 차감, PENDING/LOST는 차감 안됨
+- 직접 예약 성공 시 즉시 10점 차감
+
+### 주요 의존성
+
+**Backend**:
+- `fastapi`: 웹 프레임워크
+- `sqlalchemy`: ORM (async 지원)
+- `httpx`: HTTP 클라이언트 (lulu-lala API 호출)
+- `pytz`: 시간대 처리 (KST)
+- `playwright`: 웹 크롤링
+- `pycryptodome`: RSA 암호화
+- `firebase-admin`: 푸시 알림
+
+**Frontend**:
+- `next.js 15`: React 프레임워크
+- `react-query`: 상태 관리 및 캐싱
+- `axios`: HTTP 클라이언트
+- `tailwindcss`: 스타일링
 
 ---
 
