@@ -5,7 +5,8 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatDate(date: string | Date): string {
+export function formatDate(date: string | Date | undefined): string {
+  if (!date) return "-";
   const d = new Date(date);
   return d.toLocaleDateString("ko-KR", {
     year: "numeric",
