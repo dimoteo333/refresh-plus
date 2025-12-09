@@ -53,12 +53,5 @@ RUN playwright install-deps chromium
 # 애플리케이션 코드 복사
 COPY . .
 
-# Railway가 자동으로 PORT 환경 변수를 설정하므로 EXPOSE는 참고용
-EXPOSE $PORT
-
-# 헬스체크 (선택사항)
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT:-8000}/health').read()" || exit 1
-
 # 시작 명령어 
 CMD ["python", "run_accommodation_crawler.py"]
