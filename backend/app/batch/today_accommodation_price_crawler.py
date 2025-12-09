@@ -144,7 +144,14 @@ async def process_today_accommodation_price_crawler() -> Dict:
 
             # 브라우저 시작
             logger.info("Launching browser...")
-            browser = await p.chromium.launch(headless=True)
+            browser = await p.chromium.launch(
+                headless=True,
+                args=[
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-dev-shm-usage',  # Docker/메모리 제한 환경 최적화
+                    '--no-sandbox',  # Docker 환경 호환성
+                ]
+            )
             context = await browser.new_context(
                 viewport={"width": 1920, "height": 1080},
                 user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",

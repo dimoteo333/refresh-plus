@@ -564,7 +564,14 @@ async def process_today_accommodation_realtime(
             logger.info(f"✓ Cleanup complete. Removed {cleaned_rows} stale rows.")
 
             # 브라우저 시작
-            browser = await p.chromium.launch(headless=True)
+            browser = await p.chromium.launch(
+                headless=True,
+                args=[
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-dev-shm-usage',  # Docker/메모리 제한 환경 최적화
+                    '--no-sandbox',  # Docker 환경 호환성
+                ]
+            )
             context = await browser.new_context(
                 viewport={"width": 1920, "height": 1080},
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"

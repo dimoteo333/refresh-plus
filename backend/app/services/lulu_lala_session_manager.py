@@ -48,7 +48,11 @@ class LuluLalaSessionManager:
             self._playwright = await async_playwright().start()
             self._browser = await self._playwright.chromium.launch(
                 headless=True,
-                args=['--disable-blink-features=AutomationControlled']
+                args=[
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-dev-shm-usage',  # Docker/메모리 제한 환경 최적화
+                    '--no-sandbox',  # Docker 환경 호환성
+                ]
             )
             logger.info("Playwright browser initialized for session management")
         except Exception as e:
@@ -170,7 +174,14 @@ class LuluLalaSessionManager:
                 # 브라우저가 초기화되지 않은 경우 임시로 생성
                 logger.warning("Browser not initialized, creating temporary browser")
                 async with async_playwright() as p:
-                    browser = await p.chromium.launch(headless=True)
+                    browser = await p.chromium.launch(
+                        headless=True,
+                        args=[
+                            '--disable-blink-features=AutomationControlled',
+                            '--disable-dev-shm-usage',  # Docker/메모리 제한 환경 최적화
+                            '--no-sandbox',  # Docker 환경 호환성
+                        ]
+                    )
                     context = await browser.new_context(
                         viewport={"width": 1920, "height": 1080}
                     )
@@ -201,7 +212,11 @@ class LuluLalaSessionManager:
                     cookies = await context.cookies()
                     session_data = await self._save_session(user, cookies, db)
 
+                    # 명시적으로 page, context, browser 닫기
+                    await page.close()
+                    await context.close()
                     await browser.close()
+                    logger.info("Temporary browser resources closed")
                     return session_data
             else:
                 # 기존 브라우저 사용 (더 빠름)
@@ -235,7 +250,9 @@ class LuluLalaSessionManager:
                 cookies = await context.cookies()
                 session_data = await self._save_session(user, cookies, db)
 
-                # 컨텍스트는 유지 (재사용 가능)
+                # 페이지는 닫고, 컨텍스트는 유지 (세션 재사용 가능)
+                await page.close()
+                logger.info("Page closed, context kept for session reuse")
                 session_data.context = context
 
                 return session_data
