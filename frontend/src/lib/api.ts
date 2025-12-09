@@ -227,6 +227,9 @@ export const bookingApi = {
   create: (token: string, data: any) =>
     createApiClient(token).post("/api/bookings", data),
 
+  createDirectReservation: (token: string, data: any) =>
+    createApiClient(token).post("/api/bookings/direct-reserve", data),
+
   getHistory: (token: string, params?: any) =>
     createApiClient(token).get("/api/bookings", { params }),
 

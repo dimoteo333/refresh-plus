@@ -2,23 +2,26 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { accommodationApi } from "@/lib/api";
+import { accommodationApi, bookingApi } from "@/lib/api";
 import { ArrowLeft, Building2, Globe, Heart, MapPin, Phone, Sparkles, Users } from "lucide-react";
 import { AccommodationDetail, AvailableDate } from "@/types/accommodation";
 import AccommodationImageCarousel from "@/components/accommodation/AccommodationImageCarousel";
 import AvailableDatePicker from "@/components/accommodation/AvailableDatePicker";
+import DirectReservationModal from "@/components/accommodation/DirectReservationModal";
 import WeekdayAverageChart from "@/components/accommodation/WeekdayAverageChart";
 import BottomNav from "@/components/layout/BottomNav";
 import { Badge } from "@/components/ui/badge";
 import { useWishlist } from "@/hooks/useWishlist";
 import { useAuth } from "@/contexts/AuthContext";
+import { useQueryClient } from "@tanstack/react-query";
 
 export default function AccommodationDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const { addToWishlist, removeFromWishlist, isWishlisted: checkWishlisted, isLoading: wishlistLoading } = useWishlist();
+  const queryClient = useQueryClient();
 
   const [accommodation, setAccommodation] = useState<AccommodationDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -26,6 +29,7 @@ export default function AccommodationDetailPage() {
   const [selectedDate, setSelectedDate] = useState<AvailableDate | null>(null);
   const [aiSummary, setAiSummary] = useState<string[] | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [isReservationModalOpen, setIsReservationModalOpen] = useState(false);
   const showPriorityNotice = !!(selectedDate && selectedDate.applicants >= 1 && selectedDate.score === 0);
 
   useEffect(() => {
@@ -91,6 +95,28 @@ export default function AccommodationDetailPage() {
 
     fetchAiSummary();
   }, [id]);
+
+  const handleDirectReservation = async (phoneNumber: string) => {
+    if (!selectedDate) return;
+
+    try {
+      const token = localStorage.getItem("access_token") || "";
+      const response = await bookingApi.createDirectReservation(token, {
+        accommodation_id: id,
+        check_in_date: selectedDate.date,
+        phone_number: phoneNumber,
+      });
+
+      alert(response.data.message);
+      setIsReservationModalOpen(false);
+
+      // 예약 내역 캐시 무효화
+      queryClient.invalidateQueries({ queryKey: ["bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["user"] });
+    } catch (error: any) {
+      alert(error.response?.data?.detail || "예약에 실패했습니다.");
+    }
+  };
 
   if (loading) {
     return (
@@ -280,6 +306,23 @@ export default function AccommodationDetailPage() {
               selectedDate={selectedDate}
               onSelectDate={setSelectedDate}
             />
+            {selectedDate && (
+              <div className="mt-4">
+                <button
+                  onClick={() => {
+                    if (!isAuthenticated) {
+                      alert("로그인이 필요합니다.");
+                      router.push("/login");
+                      return;
+                    }
+                    setIsReservationModalOpen(true);
+                  }}
+                  className="w-full rounded-lg bg-blue-600 py-3 font-semibold text-white hover:bg-blue-700 transition"
+                >
+                  예약하기
+                </button>
+              </div>
+            )}
           </section>
         )}
 
@@ -321,6 +364,18 @@ export default function AccommodationDetailPage() {
       )}
 
       <BottomNav activeHref="/search" />
+
+      {/* 예약 모달 */}
+      {isReservationModalOpen && selectedDate && user && (
+        <DirectReservationModal
+          isOpen={isReservationModalOpen}
+          onClose={() => setIsReservationModalOpen(false)}
+          accommodation={accommodation}
+          selectedDate={selectedDate}
+          userName={user.name}
+          onSubmit={handleDirectReservation}
+        />
+      )}
     </div>
   );
 }

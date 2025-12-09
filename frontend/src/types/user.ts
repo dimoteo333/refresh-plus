@@ -2,7 +2,7 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  current_points: number;
+  points: number;
   max_points: number;
   total_bookings: number;
   successful_bookings: number;
