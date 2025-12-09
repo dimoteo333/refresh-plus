@@ -4,10 +4,12 @@ FAQ RAG 챗봇을 위한 벡터 데이터베이스
 """
 import os
 from typing import List, Dict, Any, Optional
+from pathlib import Path
 import chromadb
 from chromadb.config import Settings
 from chromadb.utils import embedding_functions
 import logging
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +21,7 @@ class VectorStore:
     def __init__(
         self,
         collection_name: str = "faq_collection",
-        persist_directory: str = "./chroma_db",
+        persist_directory: str | Path | None = None,
         use_openai: bool = False
     ):
         """
@@ -31,14 +33,20 @@ class VectorStore:
             use_openai: OpenAI 임베딩 사용 여부 (False면 HuggingFace 사용)
         """
         self.collection_name = collection_name
-        self.persist_directory = persist_directory
+        default_dir = Path(__file__).resolve().parents[2] / "chroma_db"
+        self.persist_directory = Path(
+            persist_directory
+            or settings.CHROMA_PERSIST_DIRECTORY
+            or default_dir
+        ).expanduser().resolve()
+        self.persist_directory.mkdir(parents=True, exist_ok=True)
 
         # ChromaDB 클라이언트 초기화
         self.client = chromadb.PersistentClient(
-            path=persist_directory,
+            path=str(self.persist_directory),
             settings=Settings(
                 anonymized_telemetry=False,
-                allow_reset=True
+                allow_reset=True,
             )
         )
 
@@ -172,7 +180,7 @@ def get_vector_store() -> VectorStore:
     if _vector_store is None:
         _vector_store = VectorStore(
             collection_name="faq_collection",
-            persist_directory="./chroma_db",
+            persist_directory=None,
             use_openai=False  # HuggingFace 사용 (무료)
         )
     return _vector_store

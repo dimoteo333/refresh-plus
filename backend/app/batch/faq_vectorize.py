@@ -10,9 +10,7 @@ from pathlib import Path
 backend_dir = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(backend_dir))
 
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
-from app.config import settings
+from app.database import AsyncSessionLocal  # Turso/libsql 설정 재사용
 from app.services.faq_vector_service import get_faq_vector_service
 from app.utils.logger import get_logger
 
@@ -28,21 +26,7 @@ async def vectorize_faqs():
     logger.info("=" * 50)
 
     try:
-        # 데이터베이스 엔진 생성
-        engine = create_async_engine(
-            settings.DATABASE_URL,
-            echo=False,
-            pool_pre_ping=True
-        )
-
-        # 세션 생성
-        async_session = sessionmaker(
-            engine,
-            class_=AsyncSession,
-            expire_on_commit=False
-        )
-
-        async with async_session() as session:
+        async with AsyncSessionLocal() as session:
             # FAQ 벡터화 서비스
             faq_vector_service = get_faq_vector_service()
 
