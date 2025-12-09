@@ -202,6 +202,11 @@ export const accommodationApi = {
 
   getDates: (id: string, params?: { start_date?: string; end_date?: string }) =>
     createApiClient().get(`/api/accommodations/${id}/dates`, { params }),
+
+  getScoreBasedRecommendations: (limit?: number) =>
+    createApiClient().get("/api/accommodations/score-based-recommendations", {
+      params: { limit: limit || 10 },
+    }),
 };
 
 // 예약 관련 API

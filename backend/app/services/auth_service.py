@@ -19,10 +19,7 @@ from app.utils.jwt import (
     verify_token,
     JWTError
 )
-from app.batch.accommodation_crawler import (
-    login_to_lulu_lala,
-    navigate_to_reservation_page
-)
+from auth.lulu_lala_auth import login_to_lulu_lala, navigate_to_reservation_page
 from app.config import settings
 
 from playwright.async_api import async_playwright
@@ -312,17 +309,21 @@ async def _fetch_reservations_from_lulu_lala(page) -> list[Dict[str, any]]:
                             if check_in and check_out:
                                 break
 
+                # 숙소 이름 추출 (.prd_name 클래스 우선)
+                if not hotel_name:
+                    prd_name = await box.query_selector(".prd_name")
+                    if prd_name:
+                        text = await prd_name.text_content()
+                        if text:
+                            hotel_name = _clean_value(text)
+
+                # 다른 선택자들 시도
                 if not hotel_name:
                     name_element = await box.query_selector(".order_state_tit, .order_subject, .order_info strong")
                     if name_element:
                         text = await name_element.text_content()
                         if text:
                             hotel_name = _clean_value(text)
-
-                if not hotel_name and link:
-                    link_text = await link.text_content()
-                    if link_text:
-                        hotel_name = _clean_value(link_text)
 
                 reservations.append({
                     "reservation_number": reservation_number,

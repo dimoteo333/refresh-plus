@@ -1,16 +1,18 @@
 "use client";
 
-import { WeekdayAverage } from "@/types/accommodation";
+import { WeekdayAverage, AvailableDate } from "@/types/accommodation";
 import { useMemo } from "react";
 
 interface WeekdayAverageChartProps {
   weekdayAverages: WeekdayAverage[];
   selectedWeekday?: number;
+  selectedDate?: AvailableDate | null;
 }
 
 export default function WeekdayAverageChart({
   weekdayAverages,
   selectedWeekday,
+  selectedDate,
 }: WeekdayAverageChartProps) {
   // 전체 요일 데이터 (0-6) 생성, 없는 요일은 0으로 채움
   const fullWeekdayData = useMemo(() => {
@@ -53,26 +55,26 @@ export default function WeekdayAverageChart({
 
   // 추천/비추천 문구 생성
   const getRecommendationText = () => {
-    if (!selectedWeekdayData || selectedWeekdayData.count === 0) {
+    if (!selectedWeekdayData || selectedWeekdayData.count === 0 || !selectedDate) {
       return null;
     }
 
-    const diff = selectedWeekdayData.avg_score - overallAverage;
+    const diff = selectedWeekdayData.avg_score - selectedDate.score;
     const weekdayName = selectedWeekdayData.weekday_name;
 
-    if (diff < -5) {
+    if (diff > 5) {
       return {
-        text: `좋아요! ${weekdayName}요일은 최근 3개월 평균 예약 점수(${overallAverage.toFixed(1)}점)보다 낮은 상태에요!`,
+        text: `좋아요! ${weekdayName}요일 평균 당첨 점수(${selectedWeekdayData.avg_score.toFixed(1)}점)가 현재 신청 점수(${selectedDate.score.toFixed(1)}점)보다 높아요!`,
         type: "positive" as const,
       };
-    } else if (diff > 5) {
+    } else if (diff < -5) {
       return {
-        text: `${weekdayName}요일은 최근 3개월 평균 예약 점수(${overallAverage.toFixed(1)}점)보다 높은 편이에요.`,
+        text: `${weekdayName}요일 평균 당첨 점수(${selectedWeekdayData.avg_score.toFixed(1)}점)가 현재 신청 점수(${selectedDate.score.toFixed(1)}점)보다 낮네요. 경쟁이 치열해요.`,
         type: "negative" as const,
       };
     } else {
       return {
-        text: `${weekdayName}요일은 최근 3개월 평균 예약 점수(${overallAverage.toFixed(1)}점)와 비슷한 수준이에요.`,
+        text: `${weekdayName}요일 평균 당첨 점수(${selectedWeekdayData.avg_score.toFixed(1)}점)와 현재 신청 점수(${selectedDate.score.toFixed(1)}점)가 비슷한 수준이에요.`,
         type: "neutral" as const,
       };
     }

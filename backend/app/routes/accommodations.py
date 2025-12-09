@@ -5,7 +5,7 @@ from app.database import get_db
 from app.models.accommodation import Accommodation
 from app.models.user import User
 from app.models.booking import Booking, BookingStatus
-from app.schemas.accommodation import AccommodationResponse, RandomAccommodationResponse, PopularAccommodationResponse, SOLRecommendedAccommodationResponse, SearchAccommodationResponse, AccommodationDetailResponse, AvailableDateResponse
+from app.schemas.accommodation import AccommodationResponse, RandomAccommodationResponse, PopularAccommodationResponse, SOLRecommendedAccommodationResponse, SearchAccommodationResponse, AccommodationDetailResponse, AvailableDateResponse, ScoreBasedRecommendationResponse
 from app.dependencies import get_current_user
 from app.services.accommodation_service import AccommodationService
 from typing import List, Optional
@@ -59,7 +59,7 @@ async def get_accommodations(
         can_book = await service.can_user_book(
             current_user.id,
             acc.id,
-            current_user.current_points,
+            current_user.points,
             db
         )
 
@@ -167,6 +167,39 @@ async def get_sol_recommended_accommodations(
             average_sol_score=acc.average_sol_score
         )
         for acc in accommodations
+    ]
+
+@router.get("/score-based-recommendations", response_model=List[ScoreBasedRecommendationResponse])
+async def get_score_based_recommendations(
+    limit: int = Query(10, ge=1, le=20),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    사용자 점수 기반 추천 숙소 목록 조회
+    MY 페이지용 - 비슷한 점수대 사용자들이 방문한 숙소
+    - 사용자 점수를 5점 단위로 구분 (90~95, 95~100 등)
+    - 최근 3개월간 비슷한 점수대 사용자들이 방문한 숙소
+    - 각 숙소별 방문자 수 포함
+    - limit: 조회할 숙소 개수 (기본값: 10)
+    """
+
+    results = await service.get_score_based_recommendations(
+        user_score=current_user.points,
+        db=db,
+        limit=limit
+    )
+
+    return [
+        ScoreBasedRecommendationResponse(
+            id=result["id"],
+            name=result["name"],
+            region=result["region"],
+            first_image=result["first_image"],
+            visitor_count=result["visitor_count"],
+            score_range=result["score_range"]
+        )
+        for result in results
     ]
 
 @router.get("/search", response_model=List[SearchAccommodationResponse])
@@ -401,8 +434,8 @@ async def get_accommodation_detail(
         images=accommodation.images,
         amenities=accommodation.amenities,
         summary=(accommodation.summary or [])[:5],
-        my_score=current_user.current_points,
-        can_book=current_user.current_points >= avg_winning_score,
+        my_score=current_user.points,
+        can_book=current_user.points >= avg_winning_score,
         past_bookings=past_bookings,
         win_rate=win_rate,
         avg_winning_score_4weeks=avg_winning_score,

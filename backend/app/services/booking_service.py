@@ -1,5 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.orm import joinedload
 from datetime import datetime, timedelta
 import uuid
 from app.models.booking import Booking, BookingStatus
@@ -116,14 +117,16 @@ class BookingService:
         status: str | None = None,
         db: AsyncSession = None
     ) -> list[Booking]:
-        """사용자의 예약 이력 조회"""
+        """사용자의 예약 이력 조회 (숙소 정보 포함)"""
 
         query = select(Booking).where(Booking.user_id == user_id)
 
         if status:
             query = query.where(Booking.status == BookingStatus[status.upper()])
 
+        # 숙소 정보를 함께 로드
+        query = query.options(joinedload(Booking.accommodation))
         query = query.order_by(Booking.created_at.desc())
 
         result = await db.execute(query)
-        return result.scalars().all()
+        return result.scalars().unique().all()

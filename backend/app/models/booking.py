@@ -1,4 +1,5 @@
 from sqlalchemy import Column, String, Integer, DateTime, ForeignKey, Enum as SQLEnum, Boolean
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from datetime import datetime
 from enum import Enum
@@ -28,3 +29,6 @@ class Booking(Base):
     is_from_crawler = Column(Boolean, default=False)  # 크롤링으로 가져온 예약인지 구분
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    # Relationships
+    accommodation = relationship("Accommodation", foreign_keys=[accommodation_id], lazy="joined")

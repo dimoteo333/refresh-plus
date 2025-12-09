@@ -29,7 +29,7 @@ async def get_score_recovery_schedule(
     )
 
     return ScoreRecoverySchedule(
-        current_score=current_user.current_points,
+        current_score=current_user.points,
         max_score=current_user.max_points,
         recovery_per_period=10,
         recovery_period_hours=settings.POINTS_RECOVERY_HOURS,

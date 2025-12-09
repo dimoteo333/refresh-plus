@@ -16,21 +16,10 @@ from app.models.faq import FAQ
 from app.config import settings
 from app.utils.logger import get_logger
 from playwright.async_api import async_playwright, Browser, Page, BrowserContext
-from Crypto.PublicKey import RSA
-from Crypto.Cipher import PKCS1_v1_5
-import base64
 
-# 기존 크롤러의 함수들을 import
-from app.batch.accommodation_crawler import (
-    encrypt_rsa,
-    login_to_lulu_lala,
-    navigate_to_reservation_page
-)
+from auth.lulu_lala_auth import encrypt_rsa, login_to_lulu_lala, navigate_to_reservation_page
 
 logger = get_logger(__name__)
-
-# 로그인 URL
-LULU_LALA_LOGIN_URL = "https://lulu-lala.zzzmobile.co.kr/login.html"
 
 
 async def navigate_to_faq_page(page: Page) -> tuple[bool, Page]:
@@ -735,4 +724,3 @@ async def process_faq_crawling(
                 await context.close()
             if browser:
                 await browser.close()
-

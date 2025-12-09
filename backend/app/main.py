@@ -4,7 +4,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from contextlib import asynccontextmanager
 
 from app.config import settings
-from app.database import engine, Base
+from app.database import engine, Base, init_db
 from app.routes import accommodations, bookings, users, wishlist, notifications, scores, chatbot, auth
 from app.utils.logger import get_logger
 
@@ -37,6 +37,9 @@ except ImportError:
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("Application startup")
+    # SQLite WAL 모드 활성화 (동시성 개선)
+    await init_db()
+    logger.info("Database initialized")
     yield
     # Shutdown
     logger.info("Application shutdown")

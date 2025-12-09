@@ -11,6 +11,6 @@ async def get_score_history(
     """점수 변동 이력 조회"""
     # TODO: Implement score history tracking
     return {
-        "current_score": current_user.current_points,
+        "current_score": current_user.points,
         "history": []
     }
