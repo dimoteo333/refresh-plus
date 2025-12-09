@@ -2,7 +2,7 @@
 
 **임직원들을 위한 스마트한 연성소(호텔/펜션/리조트) 예약 시스템**
 
-포인트 기반 티켓팅, 실시간 알림, AI 챗봇을 통합한 웹/모바일 플랫폼
+포인트 기반 티켓팅, 직접 예약, 실시간 알림, AI 챗봇을 통합한 웹/모바일 플랫폼
 
 ---
 
@@ -24,13 +24,17 @@
 
 기존 신한은행 임직원용 연성소(호텔/펜션/리조트) 예약 시스템의 불편함을 개선하여, 다음을 제공합니다:
 
-- **공정한 티켓팅 시스템**: 포인트 기반으로 매일 자정(00:00 KST) 배치 작업을 통해 최고 점수자에게 자동 배정
+- **이중 예약 시스템**: 공정한 티켓팅과 즉시 예약을 모두 지원
+  - **티켓팅 시스템**: 포인트 기반으로 매일 자정(00:00 KST) 배치 작업을 통해 최고 점수자에게 자동 배정
+  - **직접 예약**: 실시간으로 lulu-lala에 직접 예약 요청 (08:00~21:00 KST 시간 제한)
 - **자동화된 크롤링**: 기존 웹사이트에서 숙소 정보, FAQ, 실시간 신청 현황 자동 수집
-- **실시간 알림**: 개인화된 푸시 알림으로 예약 기회를 놓치지 않음
+- **실시간 알림**: Firebase FCM 푸시 알림으로 예약 기회를 놓치지 않음
 - **AI 챗봇**: FAQ 기반 RAG 챗봇으로 즉시 답변
 - **모던 UI/UX**: Next.js 15 + React 19 기반 반응형 웹 인터페이스
 
 ### 🌟 핵심 비즈니스 로직
+
+#### 1. 티켓팅 시스템 (공정한 배정)
 
 ```
 사용자 예약 신청 → PENDING 상태
@@ -44,6 +48,30 @@ PENDING 예약을 점수 순으로 정렬
            ↓
 WON 상태일 때만 포인트 차감
 ```
+
+#### 2. 직접 예약 시스템 (실시간 예약)
+
+```
+사용자가 숙소 상세에서 날짜 선택
+           ↓
+"예약하기" 버튼 클릭
+           ↓
+시간 제한 체크 (08:00~21:00 KST)
+           ↓
+연락처 입력 & 개인정보 동의
+           ↓
+lulu-lala API로 직접 POST 요청
+           ↓
+HTTP 302 응답 → 성공
+           ↓
+즉시 WON 상태로 Booking 생성
+           ↓
+포인트 10점 차감
+```
+
+**차이점**:
+- **티켓팅**: 신청 시 PENDING → 자정에 배치 작업으로 WON/LOST 결정
+- **직접 예약**: 즉시 lulu-lala API 호출 → 성공 시 바로 WON 상태
 
 ---
 
@@ -64,9 +92,14 @@ DB 저장 (Accommodations, AccommodationDates, TodayAccommodations)
 ```
 
 **크롤링 배치 작업**:
-- `accommodation_crawler.py`: 전체 숙소 정보 수집 (일 1회)
-- `faq_crawler.py`: FAQ 정보 수집 (일 1회 또는 필요 시)
-- `today_accommodation_realtime.py`: 오늘자 실시간 신청 현황 갱신 (시간당 1회)
+- `accommodation_crawler.py`: 전체 숙소 정보 수집 (매일 01:00 KST)
+- `faq_crawler.py`: FAQ 정보 수집 (매일 02:00 KST)
+- `today_accommodation_realtime.py`: 오늘자 실시간 신청 현황 갱신 (매시간)
+
+**인증 방식**:
+- RSA 공개키로 비밀번호 암호화
+- 세션 쿠키 저장하여 재사용
+- 직접 예약 시 사용자의 session_cookies 활용
 
 ### 2. 공정한 티켓팅 시스템
 
@@ -93,22 +126,62 @@ WON 사용자에게 푸시 알림 발송
 - 포인트는 WON 상태일 때만 차감 (PENDING/LOST는 차감 안됨)
 - 배치 작업 시점의 점수가 아닌 신청 시점의 점수(`winning_score_at_time`)로 비교
 
-### 3. 실시간 알림 기능
+### 3. 직접 예약 시스템
 
 ```
-플랫폼별 알림 전달:
-┌─────────────────────────────────────┐
-│     알림 이벤트 발생                    │
-└──────────────┬──────────────────────┘
-              │
-    ┌─────────┼─────────┐
-    │         │         │
-    ▼         ▼         ▼
- Android   iOS & PC
-    │         │
-    ▼         ▼
-Firebase  Kakao
-  FCM      Talk
+[직접 예약 흐름]
+숙소 상세 페이지에서 예약 가능 날짜 선택
+    ↓
+"예약하기" 버튼 표시
+    ↓
+버튼 클릭 → 예약 모달 표시
+    ↓
+시간 제한 실시간 체크 (08:00~21:00 KST)
+    ↓
+숙박자 정보 자동 입력 (현재 로그인 사용자)
+연락처 입력 (010-XXXX-XXXX)
+개인정보 동의 체크
+    ↓
+"예약하기" 버튼 클릭
+    ↓
+Backend에서 lulu-lala API로 POST 요청
+(사용자의 session_cookies로 인증)
+    ↓
+HTTP 302 응답 확인 → 성공
+    ↓
+Booking 테이블에 WON 상태로 즉시 저장
+포인트 10점 차감
+    ↓
+성공 메시지 표시
+"예약에 성공했습니다. 해당 숙박에 대한 배정 결과는 익일 07시에 확인 가능합니다."
+```
+
+**주요 특징**:
+- **시간 제한**: 08:00~21:00 KST만 예약 가능
+- **실시간 경고**: 20:00 이후 "예약 가능 시간이 얼마 남지 않았습니다" 표시
+- **모바일 최적화**: 연락처 입력 필드 모바일 화면에 맞게 조정
+- **즉시 반영**: 성공 시 바로 WON 상태로 저장 (PENDING 단계 없음)
+- **세션 재사용**: 로그인된 사용자의 session_cookies로 인증
+
+**API 엔드포인트**:
+```
+POST /api/bookings/direct-reserve
+{
+  "accommodation_id": "숙소 ID",
+  "check_in_date": "2024-12-25",
+  "phone_number": "010-1234-5678"
+}
+```
+
+**성공 기준**:
+- lulu-lala API 응답 HTTP 302 (리다이렉트)
+
+### 4. 실시간 알림 기능
+
+```
+Firebase Cloud Messaging (FCM)
+           ↓
+Android / iOS / Web 푸시 알림
 ```
 
 **알림 타입**:
@@ -117,7 +190,7 @@ Firebase  Kakao
 3. **포인트 회복 알림**: 일정 시간 경과 후 포인트 회복
 4. **인기 숙소 알림**: 경쟁률 높은 숙소 남은 자리 공지
 
-### 4. FAQ 기반 RAG 챗봇
+### 5. FAQ 기반 RAG 챗봇
 
 ```
 사용자 질문
@@ -140,7 +213,7 @@ LLM으로 맥락화된 응답 생성
 - 예약 정책, 점수 시스템, 취소/변경 정보 자동 응답
 - 웹사이트 하단에 Chainlit 위젯으로 제공
 
-### 5. 찜하기 & 스마트 알림
+### 6. 찜하기 & 스마트 알림
 
 - 최대 20개 숙소 찜하기 가능
 - 찜한 숙소가 내 점수로 예약 가능해지면 푸시 알림
@@ -156,8 +229,7 @@ LLM으로 맥락화된 응답 생성
 Framework:          Next.js 15 (App Router, TypeScript, React 19)
 UI Components:      Shadcn/ui (Tailwind CSS)
 State Management:   React Query (TanStack Query)
-Push Notifications: Firebase Cloud Messaging
-Kakao Integration:  Kakao Talk Channel API (iOS/PC 알림)
+Push Notifications: Firebase Cloud Messaging (FCM)
 Forms:              React Hook Form + Zod
 HTTP Client:        Axios
 Charts/Analytics:   Recharts
@@ -169,11 +241,12 @@ Framework:          FastAPI (Python 3.11+)
 ORM:                SQLAlchemy 2.0 (async)
 Database:           Turso (SQLite Edge) / PostgreSQL
 Notifications:      Firebase Admin SDK
-Kakao Integration:  Kakao Talk Channel API
 Crawling:           Playwright (async)
 Task Queue:         Railway Cron Jobs
 RAG Chatbot:        Chainlit + LangChain
 Vector DB:          Supabase pgvector (선택)
+Timezone:           pytz (KST 시간 처리)
+HTTP Client:        httpx (async)
 ```
 
 ### Infrastructure
@@ -218,8 +291,16 @@ backend/
 │   │   └── faq.py
 │   │
 │   ├── schemas/             # Pydantic 스키마 (요청/응답 검증)
+│   │   ├── booking.py       # DirectReservationCreate, DirectReservationResponse 포함
+│   │   └── ...
+│   │
 │   ├── routes/              # API 엔드포인트
+│   │   ├── bookings.py      # POST /direct-reserve 포함
+│   │   └── ...
+│   │
 │   ├── services/            # 비즈니스 로직
+│   │   ├── booking_service.py  # create_direct_reservation() 포함
+│   │   └── ...
 │   │
 │   ├── batch/               # 배치 작업 (Railway Cron)
 │   │   ├── daily_ticketing.py               # 매일 00:00 티켓팅
@@ -228,11 +309,12 @@ backend/
 │   │   └── today_accommodation_realtime.py  # 실시간 현황 갱신
 │   │
 │   ├── integrations/        # 외부 서비스 통합
-│   │   ├── firebase_service.py  # FCM 푸시 알림
-│   │   └── kakao_service.py     # 카카오톡 알림
+│   │   └── firebase_service.py  # FCM 푸시 알림
 │   │
 │   └── utils/               # 헬퍼 함수
-│       └── logger.py
+│       ├── logger.py
+│       ├── time_utils.py    # KST 시간 제한 체크
+│       └── phone_utils.py   # 전화번호 파싱
 │
 └── batch/                   # Railway Cron 실행 스크립트
     ├── run_daily_ticketing.py
@@ -247,7 +329,7 @@ frontend/src/
 ├── app/              # Next.js 15 App Router
 │   ├── (auth)/       # 인증 라우트
 │   ├── (protected)/  # 보호된 라우트
-│   │   ├── accommodations/
+│   │   ├── accommodations/[id]/page.tsx  # 숙소 상세 (직접 예약 포함)
 │   │   ├── bookings/
 │   │   └── wishlist/
 │   └── api/          # API 라우트 (웹훅)
@@ -255,11 +337,13 @@ frontend/src/
 ├── components/       # React 컴포넌트
 │   ├── layout/
 │   ├── accommodation/
+│   │   ├── DirectReservationModal.tsx  # 직접 예약 모달
+│   │   └── ...
 │   ├── booking/
 │   └── ui/           # Shadcn/ui 컴포넌트
 │
 ├── lib/              # 유틸리티 함수
-│   ├── api.ts        # API 클라이언트
+│   ├── api.ts        # API 클라이언트 (createDirectReservation 포함)
 │   ├── firebase.ts   # Firebase 설정
 │   └── utils.ts
 │
@@ -269,6 +353,8 @@ frontend/src/
 │   └── useWishlist.ts
 │
 └── types/            # TypeScript 타입
+    ├── booking.ts    # DirectReservationCreate, DirectReservationResponse 포함
+    └── ...
 ```
 
 ---
@@ -319,10 +405,6 @@ DATABASE_URL=sqlite+aiosqlite:///./refresh_plus.db
 # Firebase (푸시 알림)
 FIREBASE_CREDENTIALS_PATH=./firebase-credentials.json
 FIREBASE_PROJECT_ID=your_project_id
-
-# Kakao Talk
-KAKAO_REST_API_KEY=your_kakao_api_key
-KAKAO_CHANNEL_ID=your_channel_id
 
 # 크롤링 (lulu-lala 로그인 정보)
 LULU_LALA_USERNAME=your_username
@@ -411,7 +493,6 @@ railway init
 Railway 대시보드에서 다음 환경 변수 추가:
 - `DATABASE_URL`
 - `FIREBASE_CREDENTIALS_BASE64` (Base64 인코딩된 Firebase 인증 정보)
-- `KAKAO_REST_API_KEY`
 - `LULU_LALA_USERNAME`
 - `LULU_LALA_PASSWORD`
 - `LULU_LALA_RSA_PUBLIC_KEY`
@@ -540,7 +621,6 @@ npm run test:e2e
 |-------|------|-----|
 | `DATABASE_URL` | 데이터베이스 연결 문자열 | ✅ |
 | `FIREBASE_CREDENTIALS_PATH` | Firebase 인증 파일 경로 | ✅ |
-| `KAKAO_REST_API_KEY` | 카카오 REST API 키 | ✅ |
 | `LULU_LALA_USERNAME` | 크롤링 로그인 사용자명 | ✅ |
 | `LULU_LALA_PASSWORD` | 크롤링 로그인 비밀번호 | ✅ |
 | `LULU_LALA_RSA_PUBLIC_KEY` | 로그인 암호화 공개키 | ✅ |
@@ -597,6 +677,54 @@ cat .env.local
 2. `LULU_LALA_RSA_PUBLIC_KEY` 형식 확인 (`\n` 문자 포함)
 3. Playwright 브라우저 설치: `playwright install chromium`
 4. 로그 확인: Railway 대시보드 → Logs
+
+### 직접 예약 실패
+
+1. **시간 제한 확인**: 08:00~21:00 KST만 예약 가능
+2. **세션 쿠키 확인**: 사용자가 로그인되어 있고 session_cookies가 유효한지 확인
+3. **HTTP 302 응답 확인**: lulu-lala API가 302 리다이렉트를 반환하는지 확인
+4. **포인트 충분 여부**: 사용자 포인트가 10점 이상인지 확인
+5. **중복 예약 확인**: 동일 날짜에 이미 WON 상태 예약이 있는지 확인
+
+---
+
+## 주요 API 엔드포인트
+
+### 티켓팅 예약
+```
+POST /api/bookings
+{
+  "accommodation_id": "string",
+  "check_in": "datetime",
+  "check_out": "datetime",
+  "guests": 2
+}
+```
+
+### 직접 예약
+```
+POST /api/bookings/direct-reserve
+{
+  "accommodation_id": "string",
+  "check_in_date": "2024-12-25",
+  "phone_number": "010-1234-5678"
+}
+```
+
+### 예약 내역 조회
+```
+GET /api/bookings?status=WON
+```
+
+### 찜하기 추가
+```
+POST /api/wishlist
+{
+  "accommodation_id": "string",
+  "desired_date": "2024-12-25",
+  "notify_enabled": true
+}
+```
 
 ---
 
