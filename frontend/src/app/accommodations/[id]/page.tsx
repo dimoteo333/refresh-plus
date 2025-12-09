@@ -291,6 +291,7 @@ export default function AccommodationDetailPage() {
             <WeekdayAverageChart
               weekdayAverages={accommodation.weekday_averages}
               selectedWeekday={selectedDate?.weekday}
+              selectedDate={selectedDate}
             />
           </section>
         )}

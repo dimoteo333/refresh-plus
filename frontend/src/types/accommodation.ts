@@ -60,6 +60,8 @@ export interface SearchAccommodation {
   applicants?: number;
   score?: number;
   status?: string;
+  // 요일별 평균 점수 (날짜 선택 시 예측 점수 표시용)
+  weekday_averages?: WeekdayAverage[];
 }
 
 export interface AccommodationFilters {
@@ -99,4 +101,13 @@ export interface AccommodationDetail {
   weekday_averages: WeekdayAverage[];
   is_wishlisted?: boolean;
   ai_summary?: string[];
+}
+
+export interface ScoreBasedRecommendation {
+  id: string;
+  name: string;
+  region: string;
+  first_image?: string;
+  visitor_count: number;
+  score_range: string;
 }

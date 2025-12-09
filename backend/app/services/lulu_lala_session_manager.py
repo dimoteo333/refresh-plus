@@ -16,7 +16,7 @@ import logging
 
 from app.models.user import User
 from app.utils.encryption import decrypt_password
-from app.batch.accommodation_crawler import login_to_lulu_lala
+from auth.lulu_lala_auth import login_to_lulu_lala, navigate_to_reservation_page
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -183,7 +183,21 @@ class LuluLalaSessionManager:
                         await browser.close()
                         raise RuntimeError(f"Login failed for user {user_id}")
 
-                    # 세션 쿠키 추출
+                    # shbrefresh 세션 확보 (SSO)
+                    logger.info("Establishing shbrefresh session via Refresh portal...")
+                    try:
+                        nav_success, nav_page = await navigate_to_reservation_page(page, context)
+                        if nav_success and nav_page:
+                            logger.info("shbrefresh session established successfully")
+                        else:
+                            logger.warning("Unable to confirm shbrefresh navigation – proceeding with existing cookies")
+                    except Exception as nav_error:
+                        logger.error(
+                            f"Failed to navigate to shbrefresh reservation page: {str(nav_error)}",
+                            exc_info=True
+                        )
+
+                    # 세션 쿠키 추출 (shbrefresh 쿠키 포함)
                     cookies = await context.cookies()
                     session_data = await self._save_session(user, cookies, db)
 
@@ -203,7 +217,21 @@ class LuluLalaSessionManager:
                     await context.close()
                     raise RuntimeError(f"Login failed for user {user_id}")
 
-                # 세션 쿠키 추출
+                # shbrefresh 세션 확보 (SSO)
+                logger.info("Establishing shbrefresh session via Refresh portal...")
+                try:
+                    nav_success, nav_page = await navigate_to_reservation_page(page, context)
+                    if nav_success and nav_page:
+                        logger.info("shbrefresh session established successfully")
+                    else:
+                        logger.warning("Unable to confirm shbrefresh navigation – proceeding with existing cookies")
+                except Exception as nav_error:
+                    logger.error(
+                        f"Failed to navigate to shbrefresh reservation page: {str(nav_error)}",
+                        exc_info=True
+                    )
+
+                # 세션 쿠키 추출 (shbrefresh 쿠키 포함)
                 cookies = await context.cookies()
                 session_data = await self._save_session(user, cookies, db)
 

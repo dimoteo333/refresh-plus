@@ -12,11 +12,22 @@ class BookingCreate(BaseModel):
 class BookingUpdate(BaseModel):
     status: Optional[BookingStatus] = None
 
+class AccommodationBasic(BaseModel):
+    """예약 정보에 포함될 기본 숙소 정보"""
+    id: str
+    name: str
+    region: Optional[str] = None
+    first_image: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
 class BookingResponse(BaseModel):
     id: str
     user_id: str
     accommodation_id: Optional[str] = None  # 크롤링 예약은 nullable
     accommodation_name: Optional[str] = None  # 크롤링한 호텔명
+    accommodation: Optional[AccommodationBasic] = None  # 조인된 숙소 정보
     check_in: Optional[datetime] = None  # 크롤링 시 파싱 실패 가능
     check_out: Optional[datetime] = None
     guests: int

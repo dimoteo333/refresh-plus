@@ -94,6 +94,8 @@ class SearchAccommodationResponse(BaseModel):
     applicants: Optional[int] = None
     score: Optional[float] = None
     status: Optional[str] = None
+    # 요일별 평균 점수 (날짜 선택 시 예측 점수 표시용)
+    weekday_averages: List['WeekdayAverageResponse'] = []
 
     class Config:
         from_attributes = True
@@ -134,6 +136,18 @@ class AccommodationDetailResponse(BaseModel):
     available_dates: List[AvailableDateResponse] = []
     weekday_averages: List[WeekdayAverageResponse] = []
     ai_summary: Optional[List[str]] = None
+
+    class Config:
+        from_attributes = True
+
+class ScoreBasedRecommendationResponse(BaseModel):
+    """점수 기반 추천 숙소 스키마"""
+    id: str
+    name: str
+    region: str
+    first_image: Optional[str] = None
+    visitor_count: int
+    score_range: str  # 예: "90~95"
 
     class Config:
         from_attributes = True

@@ -169,18 +169,22 @@ export default function DateCalendar({
           </div>
 
           {/* Legend */}
-          <div className="flex flex-wrap items-center gap-4 mb-4 p-3 bg-gray-50 rounded-lg">
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 bg-blue-500 rounded"></div>
-              <span className="text-sm text-gray-700">선택됨</span>
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4 mb-4 p-2.5 sm:p-3 bg-gray-50 rounded-lg text-xs sm:text-sm">
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <div className="w-3 h-3 sm:w-4 sm:h-4 bg-blue-500 rounded"></div>
+              <span className="text-gray-700">선택됨</span>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 border-2 border-red-500 rounded"></div>
-              <span className="text-sm text-gray-700">신청 중</span>
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <div className="w-3 h-3 sm:w-4 sm:h-4 border-2 border-red-500 rounded"></div>
+              <span className="text-gray-700">신청 중</span>
             </div>
-            <div className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-gray-600" />
-              <span className="text-sm text-gray-700">점수</span>
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <TrendingUp className="h-3 w-3 sm:h-4 sm:w-4 text-gray-600" />
+              <span className="text-gray-700">점수</span>
+            </div>
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <Users className="h-3 w-3 sm:h-4 sm:w-4 text-gray-600" />
+              <span className="text-gray-700">신청인원</span>
             </div>
           </div>
 
@@ -207,7 +211,7 @@ export default function DateCalendar({
                 {/* Calendar Days */}
                 {days.map((day, index) => {
                   if (day === null) {
-                    return <div key={`empty-${index}`} className="min-h-[80px]"></div>;
+                    return <div key={`empty-${index}`} className="min-h-[70px] sm:min-h-[85px]"></div>;
                   }
 
                   const dateInfo = getDateInfo(day);
@@ -229,7 +233,7 @@ export default function DateCalendar({
                       onClick={() => !isClosed && handleDateToggle(day)}
                       disabled={isClosed}
                       className={`
-                        min-h-[80px] p-1.5 rounded-2xl border-2 transition
+                        min-h-[70px] sm:min-h-[85px] p-1 sm:p-1.5 rounded-xl sm:rounded-2xl border-2 transition
                         ${isClosed
                           ? "cursor-not-allowed bg-gray-100 border-gray-300 opacity-60"
                           : "cursor-pointer hover:shadow-md"
@@ -246,7 +250,7 @@ export default function DateCalendar({
                     >
                       <div className="flex flex-col items-center justify-center h-full gap-0.5">
                         <div className="flex items-center gap-1">
-                          <span className={`text-sm font-semibold ${
+                          <span className={`text-xs sm:text-sm font-semibold ${
                             isClosed
                               ? "text-gray-400"
                               : index % 7 === 0
@@ -257,29 +261,29 @@ export default function DateCalendar({
                           }`}>
                             {day}
                           </span>
-                          {isSelected && !isClosed && <Check className="h-3 w-3 text-blue-600" />}
+                          {isSelected && !isClosed && <Check className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-blue-600" />}
                         </div>
                         {hasInfo && (
                           <>
                             {/* 신청 중인 경우: 점수 + 신청 인원 */}
                             {isApplicationOpen && (
-                              <>
-                                <div className="flex items-center gap-0.5 text-[11px] text-gray-700 mt-0.5">
-                                  <TrendingUp className="h-3 w-3" />
-                                  <span className="font-medium">{dateInfo.score.toFixed(1)}</span>
+                              <div className="flex flex-col items-center gap-0.5 w-full">
+                                <div className="flex items-center gap-0.5 text-[10px] sm:text-[11px] text-gray-700">
+                                  <TrendingUp className="h-2.5 w-2.5 sm:h-3 sm:w-3 flex-shrink-0" />
+                                  <span className="font-medium truncate">{dateInfo.score.toFixed(1)}</span>
                                 </div>
-                                <div className="flex items-center gap-0.5 text-[11px] text-gray-700">
-                                  <Users className="h-3 w-3" />
-                                  <span className="font-medium">{dateInfo.applicants}명</span>
+                                <div className="flex items-center gap-0.5 text-[10px] sm:text-[11px] text-gray-700">
+                                  <Users className="h-2.5 w-2.5 sm:h-3 sm:w-3 flex-shrink-0" />
+                                  <span className="font-medium truncate">{dateInfo.applicants}</span>
                                 </div>
-                              </>
+                              </div>
                             )}
 
                             {/* 마감된 경우: 점수만 (회색 음영) */}
                             {isClosed && (
-                              <div className="flex items-center gap-0.5 text-[11px] text-gray-400 mt-0.5">
-                                <TrendingUp className="h-3 w-3" />
-                                <span>{dateInfo.score.toFixed(1)}</span>
+                              <div className="flex items-center gap-0.5 text-[10px] sm:text-[11px] text-gray-400 mt-0.5">
+                                <TrendingUp className="h-2.5 w-2.5 sm:h-3 sm:w-3 flex-shrink-0" />
+                                <span className="truncate">{dateInfo.score.toFixed(1)}</span>
                               </div>
                             )}
                           </>

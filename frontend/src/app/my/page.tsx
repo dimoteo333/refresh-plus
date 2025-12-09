@@ -24,24 +24,18 @@ import BottomNav from "@/components/layout/BottomNav";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBookings } from "@/hooks/useBookings";
 import { useWishlist } from "@/hooks/useWishlist";
+import { useScoreBasedRecommendations } from "@/hooks/useAccommodations";
 import { differenceInCalendarDays, format } from "date-fns";
 import { ko } from "date-fns/locale";
-import { BookingStatus } from "@/types/booking";
-import { Booking } from "@/types/booking";
-
-type BookingWithAccommodation = Booking & {
-  accommodation?: {
-    name?: string;
-  };
-};
-type NormalizedBooking = BookingWithAccommodation & { status: string };
+import { BookingStatus, Booking } from "@/types/booking";
 
 export default function MyPage() {
   const { user, isLoading: authLoading, logout } = useAuth();
   const { data: bookings = [], isLoading: bookingsLoading } = useBookings();
   const { wishlist } = useWishlist();
+  const { data: scoreRecommendations = [], isLoading: recommendationsLoading } = useScoreBasedRecommendations(10);
 
-  const normalizedBookings: NormalizedBooking[] = (bookings as BookingWithAccommodation[]).map((booking) => ({
+  const normalizedBookings: Booking[] = bookings.map((booking) => ({
     ...booking,
     status: (booking.status || "").toLowerCase() as BookingStatus,
   }));
@@ -53,7 +47,7 @@ export default function MyPage() {
 
   const statusBadgeMap: Record<string, { label: string; className: string }> = {
     won: { label: "당첨", className: "bg-emerald-100 text-emerald-700" },
-    pending: { label: "대기 중", className: "bg-amber-100 text-amber-700" },
+    pending: { label: "반려", className: "bg-rose-100 text-rose-700" },
     cancelled: { label: "취소", className: "bg-rose-100 text-rose-700" },
     completed: { label: "완료", className: "bg-slate-100 text-slate-700" },
   };
@@ -175,6 +169,128 @@ export default function MyPage() {
             </Card>
           </section>
 
+          {/* 점수 기반 추천 섹션 */}
+          {scoreRecommendations.length > 0 && (
+            <section className="relative overflow-hidden rounded-3xl border border-amber-200/50 bg-gradient-to-br from-amber-50 via-orange-50/80 to-yellow-50/60 p-6 shadow-xl sm:p-8">
+              {/* 배경 장식 */}
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(251,191,36,0.1),transparent_50%)]" />
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_left,_rgba(249,115,22,0.08),transparent_50%)]" />
+
+              <div className="relative">
+                <div className="mb-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 shadow-lg">
+                      <Sparkles className="h-5 w-5 text-white" />
+                    </div>
+                    <h2 className="text-2xl font-bold bg-gradient-to-r from-amber-700 to-orange-700 bg-clip-text text-transparent">
+                      {user?.name || "사용자"}님을 위한 인기 숙소
+                    </h2>
+                  </div>
+                  <p className="text-sm text-amber-800/80 font-medium ml-12">
+                    최근 3개월간 <span className="font-bold text-amber-900">{scoreRecommendations[0]?.score_range}</span> 점수대로 마감된 인기 숙소를 추천해드려요
+                  </p>
+                </div>
+
+                {/* 맞춤 추천 배지 */}
+                <div className="mb-4 ml-12">
+                  <Badge className="bg-gradient-to-r from-amber-600 to-orange-600 text-white border-0 shadow-md px-3 py-1.5">
+                    <Medal className="h-3.5 w-3.5 mr-1" />
+                    맞춤 추천
+                  </Badge>
+                </div>
+
+                <div className="relative -mx-2">
+                  <div className="flex gap-3 overflow-x-auto px-2 pb-4 scrollbar-hide snap-x snap-mandatory" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                    {recommendationsLoading ? (
+                      <div className="flex w-full justify-center py-12">
+                        <div className="flex flex-col items-center gap-3">
+                          <Loader2 className="h-8 w-8 animate-spin text-amber-600" />
+                          <p className="text-sm text-amber-700">추천 숙소를 불러오는 중...</p>
+                        </div>
+                      </div>
+                    ) : (
+                      scoreRecommendations.map((accommodation, index) => (
+                        <Link
+                          key={accommodation.id}
+                          href={`/accommodations/${accommodation.id}`}
+                          className="group relative flex-shrink-0 w-60 snap-start overflow-hidden rounded-xl bg-white shadow-md transition-all duration-300 hover:shadow-xl hover:-translate-y-1.5 border border-amber-100/50"
+                        >
+                          {/* 이미지 영역 */}
+                          <div className="relative h-40 w-full overflow-hidden">
+                            {/* 이미지 */}
+                            {accommodation.first_image ? (
+                              <Image
+                                src={accommodation.first_image}
+                                alt={accommodation.name}
+                                fill
+                                className="object-cover transition-transform duration-500 group-hover:scale-110"
+                              />
+                            ) : (
+                              <div className="flex h-full items-center justify-center bg-gradient-to-br from-amber-100 to-orange-100">
+                                <Hotel className="h-16 w-16 text-amber-300/50" />
+                              </div>
+                            )}
+
+                            {/* 그라데이션 오버레이 */}
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-60 group-hover:opacity-40 transition-opacity" />
+
+                            {/* 순위 뱃지 */}
+                            {index < 3 && (
+                              <div className="absolute top-2 left-2 flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-orange-500 shadow-lg ring-2 ring-white/30">
+                                <span className="text-xs font-bold text-white">{index + 1}</span>
+                              </div>
+                            )}
+
+                            {/* 마감 횟수 뱃지 */}
+                            <div className="absolute top-2 right-2 flex items-center gap-1 rounded-full bg-white/95 backdrop-blur-sm px-2.5 py-1.5 shadow-lg ring-1 ring-amber-200/50">
+                              <CalendarClock className="h-3 w-3 text-amber-600" />
+                              <span className="text-xs font-bold text-amber-900">{accommodation.visitor_count}회</span>
+                            </div>
+                          </div>
+
+                          {/* 정보 영역 */}
+                          <div className="p-3.5">
+                            <h3 className="font-bold text-slate-900 line-clamp-1 text-base group-hover:text-amber-700 transition-colors">
+                              {accommodation.name}
+                            </h3>
+                            <div className="mt-1.5 flex items-center gap-1.5">
+                              <div className="flex items-center gap-1 rounded-lg bg-slate-100 px-2 py-0.5">
+                                <Hotel className="h-3 w-3 text-slate-600" />
+                                <span className="text-xs font-medium text-slate-700">{accommodation.region}</span>
+                              </div>
+                            </div>
+
+                            {/* 호버 시 나타나는 정보 */}
+                            <div className="mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                              <div className="flex items-center gap-1.5 text-xs text-amber-700">
+                                <Sparkles className="h-3 w-3" />
+                                <span className="font-medium">인기 숙소 · 빠른 마감</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* 카드 테두리 그라데이션 효과 */}
+                          <div className="absolute inset-0 rounded-xl ring-1 ring-inset ring-amber-200/0 group-hover:ring-amber-300/50 transition-all pointer-events-none" />
+                        </Link>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* 스크롤 힌트 */}
+                {scoreRecommendations.length > 3 && (
+                  <div className="mt-4 flex justify-center">
+                    <div className="flex items-center gap-2 text-xs text-amber-700/60">
+                      <div className="h-1 w-1 rounded-full bg-amber-400 animate-pulse" />
+                      <span>좌우로 스크롤하여 더 많은 추천 숙소를 확인하세요</span>
+                      <div className="h-1 w-1 rounded-full bg-amber-400 animate-pulse" />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
           <section className="rounded-3xl border border-sky-100/70 bg-white/80 p-4 shadow-lg backdrop-blur-lg sm:p-6">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -216,7 +332,7 @@ export default function MyPage() {
                         </div>
                         <div>
                         <CardTitle className="text-base text-slate-900">
-                          {booking.accommodation?.name || "숙소 정보 없음"}
+                          {booking.accommodation?.name || booking.accommodation_name || "숙소 정보 없음"}
                         </CardTitle>
                         <p className="text-xs text-slate-600">
                           {formatStaySummary(booking)}

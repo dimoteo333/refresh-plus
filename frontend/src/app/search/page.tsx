@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { MapPin, Search, Heart, Bell, BellOff, Calendar, Users, Star, Flame } from "lucide-react";
+import { MapPin, Search, Heart, Bell, BellOff, Calendar, Users, Star, Flame, Sparkles } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import BottomNav from "@/components/layout/BottomNav";
@@ -532,6 +532,58 @@ export default function SearchPage() {
                                 {accommodation.score ? accommodation.score.toFixed(1) : 0}점
                               </span>
                             </div>
+
+                            {/* AI 예측 점수 */}
+                            {(() => {
+                              if (!accommodation.weekday_averages || accommodation.weekday_averages.length === 0) {
+                                return null;
+                              }
+
+                              // 선택된 날짜의 요일 계산 (0=월, 1=화, ..., 6=일)
+                              const date = new Date(selectedDate);
+                              const dayOfWeek = (date.getDay() + 6) % 7; // 일요일(0)을 6으로 변환
+
+                              // 해당 요일의 평균 점수 찾기
+                              const selectedWeekdayData = accommodation.weekday_averages.find(
+                                (d) => d.weekday === dayOfWeek
+                              );
+
+                              if (!selectedWeekdayData || selectedWeekdayData.count === 0) {
+                                return null;
+                              }
+
+                              // 전체 평균 점수 계산
+                              const validScores = accommodation.weekday_averages.filter((d) => d.count > 0);
+                              if (validScores.length === 0) {
+                                return null;
+                              }
+
+                              const totalScore = validScores.reduce((sum, d) => sum + d.avg_score, 0);
+                              const overallAverage = Number(accommodation.score);
+
+                              const diff = selectedWeekdayData.avg_score - overallAverage;
+                              const weekdayName = selectedWeekdayData.weekday_name;
+
+                              let bgGradient = "from-violet-50 to-indigo-50";
+                              let borderColor = "border-violet-100";
+                              let iconColor = "text-violet-600";
+                              let textColor = "text-violet-900";
+                              let message = `예측 점수: ${selectedWeekdayData.avg_score.toFixed(1)}점`;
+                              let subMessage = `평균 ${overallAverage.toFixed(1)}점과 비슷한 수준`;
+
+                              return (
+                                <div className={`rounded-xl border-2 ${borderColor} bg-gradient-to-br ${bgGradient} px-4 py-3 shadow-sm backdrop-blur-sm`}>
+                                  <div className="flex items-start gap-2">
+                                    <Sparkles className={`h-4 w-4 mt-0.5 flex-shrink-0 ${iconColor} animate-pulse`} />
+                                    <div className="flex-1">
+                                      <p className={`text-xs font-bold ${textColor} leading-tight`}>
+                                        {message}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </div>
                         )}
 

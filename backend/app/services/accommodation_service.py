@@ -313,7 +313,7 @@ class AccommodationService:
         result = await db.execute(query)
         rows = result.all()
 
-        # 각 숙소에 대해 평균 점수, 즐겨찾기 정보, 날짜별 정보 조합
+        # 각 숙소에 대해 평균 점수, 즐겨찾기 정보, 날짜별 정보, 요일별 평균 점수 조합
         search_results = []
         for row in rows:
             # 날짜 정보 포함 여부에 따라 row 구조가 다름
@@ -345,6 +345,9 @@ class AccommodationService:
             first_image = accommodation.images[0] if accommodation.images else None
             summary = (accommodation.summary or [])[:5]
 
+            # 요일별 평균 점수 조회
+            weekday_averages = await self.get_weekday_averages(accommodation.id, db)
+
             search_results.append({
                 "id": accommodation.id,
                 "name": accommodation.name,
@@ -360,7 +363,8 @@ class AccommodationService:
                 "date": today_date,
                 "applicants": today_applicants,
                 "score": round(today_score, 1) if today_score else None,
-                "status": today_status
+                "status": today_status,
+                "weekday_averages": weekday_averages
             })
 
         return search_results
@@ -530,23 +534,6 @@ class AccommodationService:
                 각 문장은 35자 내외 한국어 문장으로, 불릿 없이 줄바꿈으로 구분합니다.
                 숙소명: {accommodation.name}"""
 
-            # OpenAI Chat Completions API with web_search
-            # response = await self.openai_client.chat.completions.create(
-            #     model=settings.RAG_MODEL or "gpt-4o-mini",
-            #     messages=[
-            #         {
-            #             "role": "system",
-            #             "content": "당신은 숙소 정보를 검색하고 요약하는 전문가입니다. 웹 검색을 통해 정확하고 객관적인 정보를 제공하세요."
-            #         },
-            #         {
-            #             "role": "user",
-            #             "content": prompt
-            #         }
-            #     ],
-            #     temperature=0.2,
-            #     web_search=True  # 웹 검색 활성화
-            # )
-
             response = await self.openai_client.responses.create(
                 model=settings.RAG_MODEL or "gpt-4o-mini",
                 tools=[
@@ -563,3 +550,60 @@ class AccommodationService:
         except Exception as e:
             logger.warning(f"AI 요약 생성 실패: {e}")
             return None
+
+    async def get_score_based_recommendations(
+        self,
+        user_score: int,
+        db: AsyncSession,
+        limit: int = 10
+    ) -> List[dict]:
+        """
+        사용자 점수 기반 추천 숙소 조회
+        - accommodation_dates의 score를 5점 단위로 그룹화
+        - 사용자 점수대와 비슷한 점수로 마감된 날짜가 많은 숙소 추천
+        - 각 숙소별 해당 점수대 마감 날짜 수 포함
+        """
+
+        # 5점 단위로 점수 범위 계산
+        score_lower = (user_score // 5) * 5
+        score_upper = score_lower + 5
+        score_range = f"{int(score_lower)}~{int(score_upper)}점"
+
+        # 최근 3개월
+        three_months_ago = datetime.now() - timedelta(days=90)
+        three_months_ago_str = three_months_ago.strftime("%Y-%m-%d")
+
+        # 해당 점수대로 마감된 숙소 조회 (accommodation_dates 기반)
+        result = await db.execute(
+            select(
+                Accommodation.id,
+                Accommodation.name,
+                Accommodation.region,
+                Accommodation.images,
+                func.count(AccommodationDate.id).label('visitor_count')
+            )
+            .join(AccommodationDate, AccommodationDate.accommodation_id == Accommodation.id)
+            .where(
+                (AccommodationDate.status == "마감(신청종료)") &
+                (AccommodationDate.score >= score_lower) &
+                (AccommodationDate.score < score_upper) &
+                (AccommodationDate.date >= three_months_ago_str)
+            )
+            .group_by(Accommodation.id, Accommodation.name, Accommodation.region, Accommodation.images)
+            .order_by(func.count(AccommodationDate.id).desc())
+            .limit(limit)
+        )
+
+        accommodations = result.all()
+
+        return [
+            {
+                "id": acc.id,
+                "name": acc.name,
+                "region": acc.region,
+                "first_image": acc.images[0] if acc.images and len(acc.images) > 0 else None,
+                "visitor_count": acc.visitor_count,
+                "score_range": score_range
+            }
+            for acc in accommodations
+        ]

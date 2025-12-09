@@ -46,7 +46,11 @@ async def get_accommodation_dates_to_update() -> List[Dict]:
                     Accommodation.capacity,
                 )
                 .join(Accommodation, AccommodationDate.accommodation_id == Accommodation.id)
-                .where(AccommodationDate.date >= tomorrow_str)
+                .where(
+                    (AccommodationDate.date >= tomorrow_str) &
+                    (Accommodation.naver_hotel_id.isnot(None)) &  # 네이버 호텔 ID가 있는 것만
+                    (AccommodationDate.online_price.is_(None))  # 가격이 아직 업데이트되지 않은 것만
+                )
                 .order_by(AccommodationDate.date)
             )
 
@@ -63,6 +67,7 @@ async def get_accommodation_dates_to_update() -> List[Dict]:
                 })
 
             logger.info(f"Found {len(records)} accommodation_dates records to process")
+            logger.info(f"  (Filtered: naver_hotel_id IS NOT NULL AND online_price IS NULL)")
             return records
 
         except Exception as e:
@@ -70,7 +75,7 @@ async def get_accommodation_dates_to_update() -> List[Dict]:
             return []
 
 
-async def update_online_price_in_db(date_id: str, online_price: float):
+async def update_online_price_in_db(date_id: str, online_price: float) -> bool:
     """
     accommodation_dates 테이블의 online_price 업데이트
     """
@@ -82,13 +87,19 @@ async def update_online_price_in_db(date_id: str, online_price: float):
             record = result.scalar_one_or_none()
 
             if record:
+                if record.online_price is not None:
+                    logger.info(f"  Skipping {date_id}: online_price already set")
+                    return False
+
                 record.online_price = online_price
                 record.updated_at = datetime.utcnow()
                 db.add(record)
                 await db.commit()
                 logger.debug(f"  Updated online_price: ₩{online_price:,.0f}")
+                return True
             else:
                 logger.warning(f"  AccommodationDate record not found: {date_id}")
+                return False
 
         except Exception as e:
             await db.rollback()
@@ -133,6 +144,7 @@ async def process_accommodation_dates_price_crawler() -> Dict:
             total_processed = 0
             total_updated = 0
             total_failed = 0
+            total_skipped = 0
 
             # 같은 숙소/날짜/타입에 대한 중복 크롤링 방지
             price_cache = {}
@@ -141,6 +153,12 @@ async def process_accommodation_dates_price_crawler() -> Dict:
                 logger.info(f"[{idx}/{len(records)}] Processing {record['accommodation_name']} on {record['date']}")
 
                 try:
+                    if not record.get("naver_hotel_id"):
+                        logger.info("  Skipping: naver_hotel_id is missing")
+                        total_skipped += 1
+                        total_processed += 1
+                        continue
+
                     check_in_date = record['date']
                     check_in = datetime.strptime(check_in_date, "%Y-%m-%d").date()
                     check_out = check_in + timedelta(days=1)
@@ -171,8 +189,11 @@ async def process_accommodation_dates_price_crawler() -> Dict:
                             price_cache[cache_key] = price
 
                     if price:
-                        await update_online_price_in_db(record['date_id'], price)
-                        total_updated += 1
+                        updated = await update_online_price_in_db(record['date_id'], price)
+                        if updated:
+                            total_updated += 1
+                        else:
+                            total_skipped += 1
                     else:
                         total_failed += 1
 
@@ -190,6 +211,7 @@ async def process_accommodation_dates_price_crawler() -> Dict:
             logger.info(f"Batch job completed:")
             logger.info(f"  Total processed: {total_processed}")
             logger.info(f"  Successfully updated: {total_updated}")
+            logger.info(f"  Skipped: {total_skipped}")
             logger.info(f"  Failed: {total_failed}")
             logger.info(f"  Cache hits: {len(price_cache)}")
             logger.info("=" * 60)
@@ -198,6 +220,7 @@ async def process_accommodation_dates_price_crawler() -> Dict:
                 "status": "success",
                 "total_processed": total_processed,
                 "total_updated": total_updated,
+                "total_skipped": total_skipped,
                 "total_failed": total_failed,
                 "cache_hits": len(price_cache),
                 "timestamp": datetime.utcnow().isoformat()
