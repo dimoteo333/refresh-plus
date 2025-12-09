@@ -7,7 +7,13 @@ export const metadata: Metadata = {
   description: "신한은행 임직원 연성소 예약 앱",
   icons: {
     icon: "/icons/icon-128x128.png",
+    apple: "/icons/apple-touch-icon.png"
   },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Refresh+"
+  }
 };
 
 export default function RootLayout({
