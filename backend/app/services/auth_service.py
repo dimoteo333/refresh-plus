@@ -610,9 +610,10 @@ class AuthService:
         await db.refresh(user)
 
         # 4.5. 예약 내역 저장
-        if reservations:
-            logger.info(f"Saving {len(reservations)} reservations to DB...")
-            await _save_reservations_to_db(reservations, user.id, db)
+        # FIXME: 로그인 시간이 너무 오래 걸려 임시로 비활성화
+        # if reservations:
+        #     logger.info(f"Saving {len(reservations)} reservations to DB...")
+        #     await _save_reservations_to_db(reservations, user.id, db)
 
         # 5. JWT 토큰 생성
         access_token = create_access_token(

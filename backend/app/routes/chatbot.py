@@ -47,15 +47,13 @@ class VectorizeResponse(BaseModel):
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
-    request: ChatRequest,
-    current_user: dict = Depends(get_current_user)
+    request: ChatRequest
 ):
     """
-    챗봇 질의응답
+    챗봇 질의응답 (비회원 사용 가능)
 
     Args:
         request: 채팅 요청
-        current_user: 현재 사용자 (인증 필요)
 
     Returns:
         챗봇 응답
@@ -114,14 +112,9 @@ async def vectorize_faqs(
 
 
 @router.get("/stats")
-async def get_chatbot_stats(
-    current_user: dict = Depends(get_current_user)
-):
+async def get_chatbot_stats():
     """
-    챗봇 통계
-
-    Args:
-        current_user: 현재 사용자 (인증 필요)
+    챗봇 통계 (비회원 사용 가능)
 
     Returns:
         챗봇 및 벡터 스토어 통계

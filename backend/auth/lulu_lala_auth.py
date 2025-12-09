@@ -138,7 +138,8 @@ async def login_to_lulu_lala(
 
 async def navigate_to_reservation_page(page: Page, context: BrowserContext) -> tuple[bool, Page]:
     """
-    룰루랄라에서 shbrefresh 예약 페이지로 이동 (명시적 대기 기반)
+    룰루랄라에서 shbrefresh 예약 페이지로 이동
+    'Refresh' 텍스트가 포함된 링크를 찾아 클릭
     """
     try:
         async def handle_dialog(dialog):
@@ -148,68 +149,10 @@ async def navigate_to_reservation_page(page: Page, context: BrowserContext) -> t
         page.on("dialog", handle_dialog)
         context.on("page", lambda new_page: new_page.on("dialog", handle_dialog))
 
-        logger.info("Looking for Refresh (연성소) entry point on main page")
+        logger.info("Looking for 'Refresh' link on main page")
 
-        # 디버깅: 현재 페이지 스크린샷
-        try:
-            await page.screenshot(path="debug_login_page.png", full_page=True)
-            logger.info("Screenshot saved: debug_login_page.png")
-        except Exception as e:
-            logger.warning(f"Failed to save screenshot: {e}")
-
-        frames = [page] + list(page.frames)
-        refresh_element = None
-        found_in_frame: Optional[Page] = None
-
-        logger.info(f"Searching in {len(frames)} frames (main page + {len(frames)-1} iframes)")
-
-        for idx, frame in enumerate(frames):
-            try:
-                await frame.wait_for_load_state("domcontentloaded")
-                all_links = await frame.query_selector_all(
-                    "a, button, [role='button'], [onclick], img"
-                )
-                logger.info(f"Frame {idx}: Found {len(all_links)} clickable elements")
-
-                for element in all_links:
-                    try:
-                        text = await element.inner_text() if hasattr(element, "inner_text") else ""
-                        href = await element.get_attribute("href") or ""
-                        title = await element.get_attribute("title") or ""
-                        alt = await element.get_attribute("alt") or ""
-                        src = await element.get_attribute("src") or ""
-                        combined_text = f"{text} {href} {title} {alt} {src}".lower()
-
-                        # 디버깅: "refresh", "연성소", "shb" 등이 포함된 요소 로깅
-                        if any(keyword in combined_text for keyword in ["refresh", "연성소", "shb", "gmidas"]):
-                            logger.debug(f"Potential match: text='{text[:30]}', href='{href[:50]}', title='{title[:30]}', alt='{alt[:30]}', src='{src[:50]}'")
-
-                        # 검색 조건
-                        if "sh_gmidas" in combined_text or \
-                           ("shbrefresh" in combined_text and "vservice" in combined_text) or \
-                           ("연성소" in combined_text) or \
-                           ("refresh" in combined_text and "shb" in combined_text):
-                            refresh_element = element
-                            found_in_frame = frame
-                            logger.info(f"Found Refresh element in frame {idx}: text='{text[:50]}', href='{href[:80]}'")
-                            break
-                    except Exception as e:
-                        logger.debug(f"Error processing element: {e}")
-                        continue
-                if refresh_element:
-                    break
-            except Exception as e:
-                logger.warning(f"Error processing frame {idx}: {e}")
-                continue
-
-        if not refresh_element:
-            logger.error("Refresh (연성소) icon not found after searching all frames")
-            logger.error(f"Current URL: {page.url}")
-            return False, page
-
-        pages_before = len(context.pages)
+        # 새 페이지 감지를 위한 핸들러 설정
         shbrefresh_page = None
-        shbrefresh_detected = False
 
         def handle_new_page(new_page):
             nonlocal shbrefresh_page
@@ -217,41 +160,80 @@ async def navigate_to_reservation_page(page: Page, context: BrowserContext) -> t
             if "shbrefresh" in url.lower() or "interparkb2b" in url.lower():
                 if "error" not in url.lower() and "login" not in url.lower():
                     shbrefresh_page = new_page
+                    logger.info(f"New shbrefresh page detected: {url}")
 
         context.on("page", handle_new_page)
 
-        if found_in_frame and found_in_frame != page:
+        # 'Refresh' 텍스트가 포함된 링크 찾기 (대소문자 무시, 최대 30초 대기)
+        try:
+            # 메인 페이지와 모든 프레임에서 검색
+            refresh_link = None
+
+            # 먼저 메인 페이지에서 검색
             try:
-                await refresh_element.click(timeout=5000)
+                refresh_link = page.locator("a:has-text('Refresh'), a:has-text('refresh'), a:has-text('연성소')").first
+                await refresh_link.wait_for(state="visible", timeout=5000)
+                logger.info("Found 'Refresh' link in main page")
             except Exception:
-                await refresh_element.evaluate("el => el.click()")
-        else:
-            await refresh_element.scroll_into_view_if_needed()
-            await refresh_element.click()
+                logger.info("'Refresh' link not found in main page, checking frames...")
 
-        for _ in range(30):
-            await page.wait_for_timeout(500)
-            if shbrefresh_page:
-                await shbrefresh_page.wait_for_load_state("networkidle", timeout=2000)
-                return True, shbrefresh_page
-
-            current_url = page.url
-            if "shbrefresh" in current_url.lower() or "interparkb2b" in current_url.lower():
-                if "error" not in current_url.lower() and "login" not in current_url.lower():
-                    return True, page
-
-            if len(context.pages) > pages_before:
-                for p in context.pages:
+                # 프레임에서 검색
+                for idx, frame in enumerate(page.frames):
                     try:
-                        p_url = p.url
-                        if "shbrefresh" in p_url.lower() or "interparkb2b" in p_url.lower():
-                            if "error" not in p_url.lower() and "login" not in p_url.lower():
-                                await p.wait_for_load_state("networkidle", timeout=2000)
-                                return True, p
+                        refresh_link = frame.locator("a:has-text('Refresh'), a:has-text('refresh'), a:has-text('연성소')").first
+                        await refresh_link.wait_for(state="visible", timeout=3000)
+                        logger.info(f"Found 'Refresh' link in frame {idx}")
+                        break
                     except Exception:
                         continue
 
-        logger.error("Failed to detect shbrefresh page; cannot proceed to reservation index")
+            if not refresh_link:
+                logger.error("'Refresh' link not found in any frame")
+                return False, page
+
+            # 링크 클릭
+            logger.info("Clicking 'Refresh' link...")
+            await refresh_link.click()
+
+        except Exception as e:
+            logger.error(f"Error finding or clicking 'Refresh' link: {e}")
+            return False, page
+
+        # shbrefresh 페이지로 이동했는지 확인 (최대 15초 대기)
+        for _ in range(30):
+            await page.wait_for_timeout(500)
+
+            # 새 페이지가 열렸는지 확인
+            if shbrefresh_page:
+                try:
+                    await shbrefresh_page.wait_for_load_state("networkidle", timeout=2000)
+                    logger.info(f"Successfully navigated to shbrefresh page: {shbrefresh_page.url}")
+                    return True, shbrefresh_page
+                except Exception as e:
+                    logger.warning(f"Page load timeout: {e}")
+                    return True, shbrefresh_page
+
+            # 현재 페이지 URL 확인
+            current_url = page.url
+            if "shbrefresh" in current_url.lower() or "interparkb2b" in current_url.lower():
+                if "error" not in current_url.lower() and "login" not in current_url.lower():
+                    logger.info(f"Successfully navigated to shbrefresh page: {current_url}")
+                    return True, page
+
+            # 새로 열린 페이지들 확인
+            for p in context.pages:
+                try:
+                    p_url = p.url
+                    if "shbrefresh" in p_url.lower() or "interparkb2b" in p_url.lower():
+                        if "error" not in p_url.lower() and "login" not in p_url.lower():
+                            await p.wait_for_load_state("networkidle", timeout=2000)
+                            logger.info(f"Successfully navigated to shbrefresh page: {p_url}")
+                            return True, p
+                except Exception:
+                    continue
+
+        logger.error("Failed to detect shbrefresh page after clicking 'Refresh' link")
+        logger.error(f"Current URL: {page.url}")
         return False, page
 
     except Exception as e:
