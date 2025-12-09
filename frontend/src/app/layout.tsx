@@ -3,10 +3,10 @@ import { Providers } from "@/components/providers";
 import "@/styles/globals.css";
 
 export const metadata: Metadata = {
-  title: "Refresh Plus - 임직원 숙소 예약",
-  description: "포인트 기반 숙소 예약 시스템",
+  title: "Refresh+",
+  description: "신한은행 임직원 연성소 예약 앱",
   icons: {
-    icon: "/icons/icon-512x512.png",
+    icon: "/icons/icon-128x128.png",
   },
 };
 
