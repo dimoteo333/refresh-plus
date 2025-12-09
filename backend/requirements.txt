@@ -20,7 +20,7 @@ langchain==0.1.0
 langchain-openai==0.0.2
 langchain-community==0.0.10
 langgraph==0.0.20
-chainlit==0.8.0
+chainlit>=2.9.3
 openai>=1.54.0
 sqlalchemy-utils==0.41.1
 alembic==1.12.1
