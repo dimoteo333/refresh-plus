@@ -2,6 +2,7 @@ from pydantic_settings import BaseSettings
 from typing import List
 from pydantic import field_validator
 import json
+import os
 
 class Settings(BaseSettings):
     # 기본 설정
