@@ -360,12 +360,8 @@ export default function Home() {
                 <p className="mt-2 text-lg font-semibold">평균 당첨 점수 도달 알림</p>
               </div>
               <div className="rounded-2xl bg-white/10 p-4 backdrop-blur-sm">
-                <p className="text-sm text-white/80">PENDING 결과</p>
-                <p className="mt-2 text-lg font-semibold">자정 배치 후 WON/LOST 푸시</p>
-              </div>
-              <div className="rounded-2xl bg-white/10 p-4 backdrop-blur-sm">
-                <p className="text-sm text-white/80">포인트 회복</p>
-                <p className="mt-2 text-lg font-semibold">회복 타이밍 · 인기 숙소 마감 임박</p>
+                <p className="text-sm text-white/80">사용자 맞춤형 알림</p>
+                <p className="mt-2 text-lg font-semibold">신청하고 싶은 날짜에 대한 푸시 알림</p>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-3 text-sm text-white/80">
