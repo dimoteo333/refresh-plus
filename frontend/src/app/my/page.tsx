@@ -31,19 +31,20 @@ import { BookingStatus, Booking } from "@/types/booking";
 
 export default function MyPage() {
   const { user, isLoading: authLoading, logout } = useAuth();
-  const { data: bookings = [], isLoading: bookingsLoading } = useBookings();
+  // FIXME: 예약 내역 조회가 너무 오래 걸려 임시로 비활성화
+  // const { data: bookings = [], isLoading: bookingsLoading } = useBookings();
   const { wishlist } = useWishlist();
   const { data: scoreRecommendations = [], isLoading: recommendationsLoading } = useScoreBasedRecommendations(10);
 
-  const normalizedBookings: Booking[] = bookings.map((booking) => ({
-    ...booking,
-    status: (booking.status || "").toLowerCase() as BookingStatus,
-  }));
+  // const normalizedBookings: Booking[] = bookings.map((booking) => ({
+  //   ...booking,
+  //   status: (booking.status || "").toLowerCase() as BookingStatus,
+  // }));
 
-  const scheduleStatuses = new Set(["pending", "won", "cancelled"]);
-  const upcomingBookings = normalizedBookings.filter((booking) =>
-    scheduleStatuses.has(booking.status)
-  );
+  // const scheduleStatuses = new Set(["pending", "won", "cancelled"]);
+  // const upcomingBookings = normalizedBookings.filter((booking) =>
+  //   scheduleStatuses.has(booking.status)
+  // );
 
   const statusBadgeMap: Record<string, { label: string; className: string }> = {
     won: { label: "당첨", className: "bg-emerald-100 text-emerald-700" },
@@ -291,7 +292,8 @@ export default function MyPage() {
             </section>
           )}
 
-          <section className="rounded-3xl border border-sky-100/70 bg-white/80 p-4 shadow-lg backdrop-blur-lg sm:p-6">
+          {/* FIXME: 예약 내역 조회가 너무 오래 걸려 임시로 비활성화 */}
+          {/* <section className="rounded-3xl border border-sky-100/70 bg-white/80 p-4 shadow-lg backdrop-blur-lg sm:p-6">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-xl font-semibold text-slate-900">
@@ -354,7 +356,7 @@ export default function MyPage() {
                 })
               )}
             </div>
-          </section>
+          </section> */}
         </main>
       </div>
 

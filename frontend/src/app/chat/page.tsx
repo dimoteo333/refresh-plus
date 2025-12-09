@@ -9,8 +9,8 @@ import ChatInterface from "@/components/chat/ChatInterface";
 import ChatInput from "@/components/chat/ChatInput";
 import { useChat } from "@/hooks/useChat";
 
-// 임시 토큰 (실제로는 인증 시스템에서 가져와야 함)
-const TEMP_TOKEN = "user-id-1";
+// 비회원 사용자를 위한 익명 토큰 (챗봇은 인증 없이 사용 가능)
+const ANONYMOUS_TOKEN = "anonymous";
 
 export default function ChatPage() {
   const {
@@ -20,7 +20,7 @@ export default function ChatPage() {
     addWelcomeMessage,
     stats,
     isLoading,
-  } = useChat({ token: TEMP_TOKEN });
+  } = useChat({ token: ANONYMOUS_TOKEN });
 
   // 페이지 로드 시 환영 메시지 추가
   useEffect(() => {
@@ -56,20 +56,7 @@ export default function ChatPage() {
                 {stats.data.total_documents}개 FAQ 학습
               </Badge>
             )}
-            <button
-              type="button"
-              className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-900 transition hover:bg-sky-100/40"
-              aria-label="알림"
-            >
-              <Bell className="h-6 w-6" />
-            </button>
-            <button
-              type="button"
-              className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-900 transition hover:bg-sky-100/40"
-              aria-label="전체 메뉴"
-            >
-              <Menu className="h-6 w-6" />
-            </button>
+            
           </div>
         </header>
 

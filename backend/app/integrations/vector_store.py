@@ -61,11 +61,11 @@ class VectorStore:
                 api_key=openai_api_key,
                 model_name="text-embedding-ada-002"
             )
-        else:
-            # HuggingFace 임베딩 사용 (로컬, 무료)
-            self.embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
-                model_name="jhgan/ko-sroberta-multitask"  # 한국어 특화 모델
-            )
+        # else:
+        #     # HuggingFace 임베딩 사용 (로컬, 무료)
+        #     self.embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
+        #         model_name="jhgan/ko-sroberta-multitask"  # 한국어 특화 모델
+        #     )
 
         # 컬렉션 가져오기 또는 생성
         try:
