@@ -15,6 +15,7 @@ if "sqlite" in settings.DATABASE_URL.lower():
 # 비동기 엔진
 engine = create_async_engine(
     settings.DATABASE_URL,
+    settings.DATABASE_AUTH_TOKEN,
     echo=settings.DEBUG,
     future=True,
     connect_args=connect_args,
