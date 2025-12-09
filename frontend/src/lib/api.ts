@@ -1,6 +1,19 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from "axios";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// API Base URL 설정 (프로토콜이 없으면 자동으로 https:// 추가)
+const getApiBaseUrl = (): string => {
+  const url = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+  // 이미 프로토콜이 있으면 그대로 반환
+  if (url.startsWith("http://") || url.startsWith("https://")) {
+    return url;
+  }
+
+  // 프로토콜이 없으면 https:// 추가
+  return `https://${url}`;
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 // 토큰 갱신 중복 방지 플래그
 let isRefreshing = false;
