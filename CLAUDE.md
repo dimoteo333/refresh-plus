@@ -68,6 +68,21 @@ npm start
 npm run lint
 ```
 
+### Docker 로컬 테스트
+```bash
+# Backend 디렉토리로 이동
+cd backend
+
+# Docker 이미지 빌드
+docker build -t refresh-plus-backend .
+
+# 컨테이너 실행
+docker run -p 8000:8000 --env-file .env -e PORT=8000 refresh-plus-backend
+
+# 자동화된 테스트 스크립트 실행
+./docker-test.sh
+```
+
 ### Railway 배포
 ```bash
 # Railway CLI 설치
@@ -77,7 +92,7 @@ npm i -g @railway/cli
 railway login
 railway init
 
-# Backend 배포
+# Backend 배포 (Dockerfile 사용)
 cd backend
 railway up
 
@@ -87,6 +102,8 @@ railway logs
 # Railway 대시보드 열기
 railway open
 ```
+
+**참고**: Railway는 `backend/Dockerfile`을 자동으로 감지하고 사용합니다. `railway.json`에서 Dockerfile 빌더가 설정되어 있습니다.
 
 ---
 

@@ -1,0 +1,73 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# 개발/테스트 파일
+.env
+.env.local
+.env.example
+*.db
+*.sqlite
+*.sqlite3
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# 로그 및 임시 파일
+*.log
+server.log
+*.tmp
+*.temp
+
+# 테스트 및 커버리지
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# 문서
+docs/
+*.md
+!README.md
+
+# Chainlit
+.chainlit/
+chainlit_app.py
+state.json
+
+# 스크립트 및 체크 파일
+scripts/
+check_*.py
+create_tables.py
+
+# Railway 설정 파일 (Railway가 자체적으로 처리)
+railway.json
+nixpacks.toml
+Procfile
+
+# ChromaDB (크롤링 데이터는 런타임에 생성)
+chroma_db/
+
+# 이미지 파일
+*.png
+*.jpg
+*.jpeg
+*.gif
+
+# 기타
+alembic/versions/__pycache__/
+migrations/__pycache__/
