@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     # 데이터베이스
     DATABASE_URL: str = os.getenv("DATABASE_URL")
     DATABASE_AUTH_TOKEN: str = os.getenv("DATABASE_AUTH_TOKEN")
+    CHROMA_PERSIST_DIRECTORY: str | None = None
 
     # Firebase
     FIREBASE_CREDENTIALS_PATH: str | None = None
