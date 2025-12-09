@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Refresh Plus"
 
     # 데이터베이스
-    DATABASE_URL: str = "sqlite+aiosqlite:///./refresh_plus.db"
+    DATABASE_URL: str = os.getenv("DATABASE_URL")
 
     # Firebase
     FIREBASE_CREDENTIALS_PATH: str | None = None
