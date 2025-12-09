@@ -9,6 +9,7 @@ export const metadata: Metadata = {
     icon: "/icons/icon-128x128.png",
     apple: "/icons/apple-touch-icon.png"
   },
+themeColor: "#f0f9ff",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
