@@ -153,7 +153,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       queryClient.clear();
       console.log("All queries cleared after logout");
 
-      router.push("/login");
+      router.push("/");
     }
   };
 
