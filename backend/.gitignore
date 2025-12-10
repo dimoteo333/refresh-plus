@@ -66,3 +66,6 @@ check_*.py
 test_*.py
 dump_*.py
 create_tables.py
+
+# Firebase
+refresh-plus-firebase.json
