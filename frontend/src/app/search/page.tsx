@@ -11,6 +11,8 @@ import { accommodationApi, wishlistApi } from "@/lib/api";
 import { SearchAccommodation } from "@/types/accommodation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQueryClient } from "@tanstack/react-query";
+import { useNotificationSetup } from "@/hooks/useNotificationSetup";
+import NotificationPermissionModal from "@/components/NotificationPermissionModal";
 
 // SOL 점수 원형 차트 컴포넌트
 const CircularScore = ({ score }: { score: number }) => {
@@ -69,6 +71,7 @@ export default function SearchPage() {
   const router = useRouter();
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const { permission, requestPermissionAndSubscribe } = useNotificationSetup();
   const [keyword, setKeyword] = useState("");
   const [selectedRegion, setSelectedRegion] = useState("전체");
   const [regionOptions, setRegionOptions] = useState<string[]>(["전체"]);
@@ -80,6 +83,8 @@ export default function SearchPage() {
   const [searchResults, setSearchResults] = useState<SearchAccommodation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [updatingWishlist, setUpdatingWishlist] = useState<string | null>(null);
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
+  const [pendingWishlistAdd, setPendingWishlistAdd] = useState<string | null>(null);
 
   // 기본 날짜: 오늘 + 1달
   const getDefaultDate = () => {
@@ -141,24 +146,19 @@ export default function SearchPage() {
     return () => clearTimeout(timeoutId);
   }, [fetchSearchResults]);
 
-  // 즐겨찾기 토글
-  const handleWishlistToggle = async (accommodationId: string, isWishlisted: boolean) => {
-    // 이미 처리 중이면 무시
-    if (updatingWishlist === accommodationId) {
-      return;
-    }
-
+  // 즐겨찾기 실제 추가 함수
+  const addToWishlist = async (accommodationId: string) => {
     try {
       setUpdatingWishlist(accommodationId);
 
-      // Optimistic update: 즉시 UI 업데이트 (즐겨찾기 상태 + 알림 아이콘)
+      // Optimistic update: 즉시 UI 업데이트
       setSearchResults((prev) =>
         prev.map((acc) =>
           acc.id === accommodationId
             ? {
                 ...acc,
-                is_wishlisted: !isWishlisted,
-                notify_enabled: !isWishlisted ? true : false // 추가 시 알림 ON, 해제 시 OFF
+                is_wishlisted: true,
+                notify_enabled: true
               }
             : acc
         )
@@ -166,8 +166,65 @@ export default function SearchPage() {
 
       const userId = user?.id || "";
 
-      if (isWishlisted) {
-        // 즐겨찾기 해제 - wishlist ID를 찾아서 삭제
+      // 즐겨찾기 추가
+      await wishlistApi.add(userId, {
+        accommodation_id: accommodationId,
+        notify_enabled: true,
+      });
+
+      // React Query 캐시 무효화
+      queryClient.invalidateQueries({ queryKey: ["wishlist"] });
+    } catch (error: any) {
+      console.error("즐겨찾기 추가 실패:", error);
+
+      // 에러 발생 시 롤백
+      setSearchResults((prev) =>
+        prev.map((acc) =>
+          acc.id === accommodationId
+            ? {
+                ...acc,
+                is_wishlisted: false,
+                notify_enabled: false
+              }
+            : acc
+        )
+      );
+
+      const errorMessage = error?.response?.data?.detail || "즐겨찾기 처리 중 오류가 발생했습니다.";
+      alert(errorMessage);
+    } finally {
+      setUpdatingWishlist(null);
+    }
+  };
+
+  // 즐겨찾기 토글
+  const handleWishlistToggle = async (accommodationId: string, isWishlisted: boolean) => {
+    // 이미 처리 중이면 무시
+    if (updatingWishlist === accommodationId) {
+      return;
+    }
+
+    // 즐겨찾기 해제
+    if (isWishlisted) {
+      try {
+        setUpdatingWishlist(accommodationId);
+
+        // Optimistic update: 즉시 UI 업데이트
+        setSearchResults((prev) =>
+          prev.map((acc) =>
+            acc.id === accommodationId
+              ? {
+                  ...acc,
+                  is_wishlisted: false,
+                  notify_enabled: false
+                }
+              : acc
+          )
+        );
+
+        const userId = user?.id || "";
+
+        // wishlist ID를 찾아서 삭제
         const wishlistResponse = await wishlistApi.getAll(userId);
         const wishlistItem = wishlistResponse.data.find(
           (item: any) => item.accommodation_id === accommodationId
@@ -175,40 +232,92 @@ export default function SearchPage() {
         if (wishlistItem) {
           await wishlistApi.remove(userId, wishlistItem.id);
         }
-      } else {
-        // 즐겨찾기 추가
-        await wishlistApi.add(userId, {
-          accommodation_id: accommodationId,
-          notify_enabled: true,
-        });
+
+        // React Query 캐시 무효화
+        queryClient.invalidateQueries({ queryKey: ["wishlist"] });
+      } catch (error: any) {
+        console.error("즐겨찾기 해제 실패:", error);
+
+        // 에러 발생 시 롤백
+        setSearchResults((prev) =>
+          prev.map((acc) =>
+            acc.id === accommodationId
+              ? {
+                  ...acc,
+                  is_wishlisted: true,
+                  notify_enabled: true
+                }
+              : acc
+          )
+        );
+
+        const errorMessage = error?.response?.data?.detail || "즐겨찾기 처리 중 오류가 발생했습니다.";
+        alert(errorMessage);
+      } finally {
+        setUpdatingWishlist(null);
       }
-
-      // React Query 캐시 무효화 (위시리스트 페이지 자동 갱신용)
-      queryClient.invalidateQueries({ queryKey: ["wishlist"] });
-
-      // Optimistic update로 이미 UI가 업데이트되었으므로 fetchSearchResults 불필요
-    } catch (error: any) {
-      console.error("즐겨찾기 토글 실패:", error);
-
-      // 에러 발생 시 롤백 (즐겨찾기 상태 + 알림 아이콘)
-      setSearchResults((prev) =>
-        prev.map((acc) =>
-          acc.id === accommodationId
-            ? {
-                ...acc,
-                is_wishlisted: isWishlisted,
-                notify_enabled: isWishlisted ? true : false // 원래 상태로 복구
-              }
-            : acc
-        )
-      );
-
-      // 사용자에게 에러 메시지 표시
-      const errorMessage = error?.response?.data?.detail || "즐겨찾기 처리 중 오류가 발생했습니다.";
-      alert(errorMessage);
-    } finally {
-      setUpdatingWishlist(null);
+      return;
     }
+
+    // 즐겨찾기 추가 시 알림 권한 체크
+    if (permission === "default") {
+      // 알림 권한이 미결정 상태 → 모달 표시
+      setPendingWishlistAdd(accommodationId);
+      setShowNotificationModal(true);
+    } else if (permission === "denied") {
+      // 알림 권한이 거부된 상태 → 안내 후 즐겨찾기만 추가
+      const confirmAdd = confirm(
+        "알림 권한이 거부되어 있습니다.\n알림 없이 즐겨찾기만 추가하시겠습니까?\n\n설정 > 알림에서 알림 권한을 허용하실 수 있습니다."
+      );
+      if (confirmAdd) {
+        await addToWishlist(accommodationId);
+      }
+    } else {
+      // 알림 권한이 허용된 상태 → 즉시 추가
+      await addToWishlist(accommodationId);
+    }
+  };
+
+  // 알림 권한 요청 후 즐겨찾기 추가
+  const handleNotificationPermissionConfirm = async () => {
+    setShowNotificationModal(false);
+
+    if (!pendingWishlistAdd) return;
+
+    try {
+      // 알림 권한 요청
+      const success = await requestPermissionAndSubscribe();
+
+      if (success) {
+        // 권한 허용 → 즐겨찾기 추가
+        await addToWishlist(pendingWishlistAdd);
+      } else {
+        // 권한 거부 → 안내 후 선택
+        const confirmAdd = confirm(
+          "알림 권한이 거부되었습니다.\n알림 없이 즐겨찾기만 추가하시겠습니까?"
+        );
+        if (confirmAdd) {
+          await addToWishlist(pendingWishlistAdd);
+        }
+      }
+    } catch (error) {
+      console.error("알림 권한 요청 실패:", error);
+      // 에러 발생 시에도 사용자에게 선택 제공
+      const confirmAdd = confirm(
+        "알림 설정 중 오류가 발생했습니다.\n알림 없이 즐겨찾기만 추가하시겠습니까?"
+      );
+      if (confirmAdd && pendingWishlistAdd) {
+        await addToWishlist(pendingWishlistAdd);
+      }
+    } finally {
+      setPendingWishlistAdd(null);
+    }
+  };
+
+  // 알림 권한 모달 닫기
+  const handleNotificationPermissionCancel = () => {
+    setShowNotificationModal(false);
+    setPendingWishlistAdd(null);
   };
 
   // 알림 토글 (찜은 유지, 알림만 on/off)
@@ -618,6 +727,13 @@ export default function SearchPage() {
       </div>
 
       <BottomNav />
+
+      {/* 알림 권한 요청 모달 */}
+      <NotificationPermissionModal
+        isOpen={showNotificationModal}
+        onClose={handleNotificationPermissionCancel}
+        onConfirm={handleNotificationPermissionConfirm}
+      />
     </div>
   );
 }

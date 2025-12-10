@@ -115,7 +115,7 @@ export function PWAInstallPrompt() {
         <div className="mb-4 flex items-center justify-center gap-2">
           <Gift className="h-6 w-6 text-yellow-500" />
           <span className="text-xl font-bold text-yellow-600">
-            보너스 포인트 5점 받기!
+            푸시알림을 받으세요!
           </span>
         </div>
 

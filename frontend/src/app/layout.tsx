@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Providers } from "@/components/providers";
+import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import "@/styles/globals.css";
 
 export const metadata: Metadata = {
@@ -28,7 +29,7 @@ export default function RootLayout({
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </head>
       <body>
-        <Providers>{children}</Providers>
+        <Providers>{children}<PWAInstallPrompt /></Providers>
       </body>
     </html>
   );
