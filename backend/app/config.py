@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     CHROMA_PERSIST_DIRECTORY: str | None = None
 
     # Firebase
-    FIREBASE_CREDENTIALS_PATH: str | None = None
+    FIREBASE_CREDENTIALS_JSON: str | None = None
     FIREBASE_PROJECT_ID: str | None = None
 
     # Kakao Talk

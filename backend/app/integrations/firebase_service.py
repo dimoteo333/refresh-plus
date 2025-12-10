@@ -7,6 +7,7 @@ from firebase_admin import credentials, messaging
 from app.config import settings
 from app.utils.logger import get_logger
 from typing import Dict, Any, Optional
+import json
 
 logger = get_logger(__name__)
 
@@ -19,12 +20,16 @@ class FirebaseService:
         """Firebase 초기화"""
         try:
             if not firebase_admin._apps:
-                if settings.FIREBASE_CREDENTIALS_PATH:
-                    cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS_PATH)
+                if settings.FIREBASE_CREDENTIALS_JSON:
+                    # JSON 문자열을 딕셔너리로 파싱
+                    cred_dict = json.loads(settings.FIREBASE_CREDENTIALS_JSON)
+                    cred = credentials.Certificate(cred_dict)
                     self.app = firebase_admin.initialize_app(cred)
                     logger.info("Firebase initialized successfully")
                 else:
                     logger.warning("Firebase credentials not configured")
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse Firebase credentials JSON: {str(e)}")
         except Exception as e:
             logger.error(f"Firebase initialization failed: {str(e)}")
 
