@@ -18,7 +18,8 @@ def is_reservation_time_allowed() -> bool:
     kst = pytz.timezone("Asia/Seoul")
     now = datetime.now(kst)
     hour = now.hour
-    return 8 <= hour < 21
+    return True
+    # return 8 <= hour < 21
 
 
 def get_time_warning_message() -> str | None:
