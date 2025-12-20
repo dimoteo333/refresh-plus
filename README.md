@@ -1,6 +1,9 @@
-# Refresh+ 기획서
+<h1>
+    <img src="images/icon-512x512.png" width="50" style="vertical-align: middle;" />
+    Refresh+
+</h1>
 
-![image.png](images/image.png)
+<img src="images/image.png" width="70%" />
 
 ## 1. 프로젝트 개요
 
@@ -108,9 +111,8 @@ AI로 더 똑똑해진, 당신만을 위한 맞춤형 연성소 예약 플랫폼
 - 요일별 패턴 분석을 통한 AI 예측 알고리즘 적용
 - 사용자에게 최적의 예약 타이밍 제안
 
-![](images/image%204.png)
-
-![](images/image%205.png)
+<img src="images/image 4.png" width="70%" />
+<img src="images/image 5.png" width="70%" />
 
 ---
 
@@ -201,9 +203,8 @@ AI로 더 똑똑해진, 당신만을 위한 맞춤형 연성소 예약 플랫폼
 - 관심 숙소를 즐겨찾기에 추가
 - 해당 숙소 예약 오픈 시 자동 알림
 
-![](images/eb63cc21-2bb6-4dcd-adbb-0de6928a4d51.png)
-
-![image.png](images/image%206.png)
+<img src="images/eb63cc21-2bb6-4dcd-adbb-0de6928a4d51.png" width="70%" />
+<img src="images/image%206.png" width="70%" />
 
 ---
 
@@ -232,7 +233,7 @@ AI로 더 똑똑해진, 당신만을 위한 맞춤형 연성소 예약 플랫폼
 - 예약 방법 및 절차 안내
 - 취소/변경 규정 설명
 
-![](images/image%207.png)
+<img src="images/image%207.png" width="70%" />
 
 ---
 
@@ -263,9 +264,9 @@ AI로 더 똑똑해진, 당신만을 위한 맞춤형 연성소 예약 플랫폼
 - 위치 및 접근성 정보
 - 주변 편의시설 및 추천 포인트
 
-![](images/c0ae840f-8b28-4b5a-ab83-1acb67c1f28d.png)
 
-![image.png](images/image%208.png)
+<img src="images/c0ae840f-8b28-4b5a-ab83-1acb67c1f28d.png" width="70%" />
+<img src="images/image%208.png" width="70%" />
 
 ## 4. 사용 기술
 
@@ -706,6 +707,7 @@ Codex는 OpenAI가 제공한 공식 프롬프트 엔지니어링 문서를 따�
 
 > *현재 AI 챗봇 및 숙소 정보 요약을 위해 GPT-4o mini 모델을 사용중입니다.*
 > 
+
 
 ![image.png](images/image%2020.png)
 
