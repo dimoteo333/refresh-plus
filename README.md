@@ -1,7 +1,3 @@
-<h1>
-    <img src="images/icon-512x512.png" width="50" style="vertical-align: middle;" />
-    Refresh+
-</h1>
 
 <img src="images/image.png" width="70%" />
 
