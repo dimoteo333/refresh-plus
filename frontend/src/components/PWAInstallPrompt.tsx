@@ -92,124 +92,10 @@ export function PWAInstallPrompt() {
     return null;
   }
 
-  // iOS용 작은 팝업
-  if (deviceType === 'ios') {
-    return (
-      <>
-        {/* 백드롭 */}
-        <div
-          className="fixed inset-0 z-40 bg-black/30 transition-opacity"
-          onClick={handleDismiss}
-        />
-
-        {/* 바텀 시트 */}
-        <div className="fixed bottom-0 left-0 right-0 z-50 animate-slide-up">
-          {!showIOSInstructions ? (
-            // 첫 화면: 간단한 안내
-            <div className="mx-4 mb-4 rounded-2xl bg-white p-4 shadow-xl">
-              <div className="flex items-center gap-3">
-                <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-blue-600">
-                  <Download className="h-6 w-6 text-white" />
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm font-semibold text-gray-900">
-                    앱 설치로 푸시 알림 받기
-                  </p>
-                  <p className="text-xs text-gray-600">
-                    홈 화면에 추가하고 실시간 알림을 받아보세요
-                  </p>
-                </div>
-                <button
-                  onClick={handleDismiss}
-                  className="flex-shrink-0 text-gray-400 hover:text-gray-600"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-              <div className="mt-3 flex gap-2">
-                <button
-                  onClick={handleDismiss}
-                  className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                >
-                  나중에
-                </button>
-                <button
-                  onClick={handleInstall}
-                  className="flex-1 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-                >
-                  설치 방법 보기
-                </button>
-              </div>
-            </div>
-          ) : (
-            // 두 번째 화면: 설치 안내
-            <div className="rounded-t-3xl bg-white pb-safe shadow-xl">
-              <div className="p-6">
-                {/* 핸들 바 */}
-                <div className="mb-4 flex justify-center">
-                  <div className="h-1 w-12 rounded-full bg-gray-300" />
-                </div>
-
-                {/* 제목 */}
-                <div className="mb-6 text-center">
-                  <div className="mb-2 inline-flex h-16 w-16 items-center justify-center rounded-full bg-blue-100">
-                    <Download className="h-8 w-8 text-blue-600" />
-                  </div>
-                  <h3 className="mt-3 text-lg font-bold text-gray-900">
-                    앱 설치 방법
-                  </h3>
-                  <p className="mt-1 text-sm text-gray-600">
-                    Safari에서 간단하게 설치할 수 있어요
-                  </p>
-                </div>
-
-                {/* 단계별 안내 */}
-                <div className="space-y-3">
-                  <div className="flex items-start gap-3 rounded-lg bg-gray-50 p-3">
-                    <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">
-                      1
-                    </div>
-                    <p className="text-sm text-gray-700">
-                      Safari 하단의 <span className="font-semibold">공유 버튼 (↑)</span> 탭
-                    </p>
-                  </div>
-                  <div className="flex items-start gap-3 rounded-lg bg-gray-50 p-3">
-                    <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">
-                      2
-                    </div>
-                    <p className="text-sm text-gray-700">
-                      <span className="font-semibold">"홈 화면에 추가"</span> 선택
-                    </p>
-                  </div>
-                  <div className="flex items-start gap-3 rounded-lg bg-gray-50 p-3">
-                    <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">
-                      3
-                    </div>
-                    <p className="text-sm text-gray-700">
-                      오른쪽 상단의 <span className="font-semibold">"추가"</span> 버튼 탭
-                    </p>
-                  </div>
-                </div>
-
-                {/* 완료 버튼 */}
-                <button
-                  onClick={handleDismiss}
-                  className="mt-6 w-full rounded-lg bg-blue-600 px-4 py-3 font-medium text-white hover:bg-blue-700"
-                >
-                  확인
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </>
-    );
-  }
-
-  // Android/Desktop용 팝업 (기존 유지)
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="relative w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+        {/* 닫기 버튼 */}
         <button
           onClick={handleDismiss}
           className="absolute right-4 top-4 text-gray-400 hover:text-gray-600"
@@ -217,12 +103,14 @@ export function PWAInstallPrompt() {
           <X size={24} />
         </button>
 
+        {/* 아이콘 */}
         <div className="mb-4 flex justify-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-100">
             <Download className="h-8 w-8 text-blue-600" />
           </div>
         </div>
 
+        {/* 제목 */}
         <h2 className="mb-2 text-center text-2xl font-bold text-gray-900">
           앱으로 설치하고
         </h2>
@@ -233,10 +121,26 @@ export function PWAInstallPrompt() {
           </span>
         </div>
 
+        {/* 설명 */}
         <p className="mb-6 text-center text-gray-600">
-          설치하면 더 빠르고 편리하게 이용할 수 있습니다.
+          {deviceType === 'ios'
+            ? '홈 화면에 추가하면 푸시 알림을 받을 수 있습니다.'
+            : '설치하면 더 빠르고 편리하게 이용할 수 있습니다.'}
         </p>
 
+        {/* iOS 설치 안내 */}
+        {deviceType === 'ios' && (
+          <div className="mb-6 rounded-lg bg-gray-50 p-4">
+            <p className="mb-2 font-semibold text-gray-900">설치 방법:</p>
+            <ol className="list-inside list-decimal space-y-1 text-sm text-gray-700">
+              <li>Safari 하단의 공유 버튼 (↑) 탭</li>
+              <li>"홈 화면에 추가" 선택</li>
+              <li>"추가" 버튼 탭</li>
+            </ol>
+          </div>
+        )}
+
+        {/* 버튼 */}
         <div className="flex gap-3">
           <button
             onClick={handleDismiss}
@@ -248,7 +152,7 @@ export function PWAInstallPrompt() {
             onClick={handleInstall}
             className="flex-1 rounded-lg bg-blue-600 px-4 py-3 font-medium text-white hover:bg-blue-700"
           >
-            설치하기
+            {deviceType === 'ios' ? '확인' : '설치하기'}
           </button>
         </div>
       </div>

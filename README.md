@@ -1,745 +1,859 @@
-# 🏨 Refresh Plus - 신한은행 임직원 숙소 예약 플랫폼
+# Refresh+ 기획서
 
-**임직원들을 위한 스마트한 연성소(호텔/펜션/리조트) 예약 시스템**
+![image.png](images/image.png)
 
-포인트 기반 티켓팅, 직접 예약, 실시간 알림, AI 챗봇을 통합한 웹/모바일 플랫폼
+## 1. 프로젝트 개요
 
----
+- 프로젝트 이름: **Refresh+** (신한은행 임직원 연성소 예약 앱)
+- 결과물 형태: **하이브리드 웹앱** (+ RAG 챗봇, 자동화 배치 파이프라인, AI 생성물)
+- 한 줄 요약:
 
-## 📋 목차
+<aside>
+🛌
 
-- [프로젝트 개요](#프로젝트-개요)
-- [주요 기능](#주요-기능)
-- [기술 스택](#기술-스택)
-- [프로젝트 구조](#프로젝트-구조)
-- [설치 및 실행](#설치-및-실행)
-- [배포 가이드](#배포-가이드)
-- [개발 가이드](#개발-가이드)
+AI로 더 똑똑해진, 당신만을 위한 맞춤형 연성소 예약 플랫폼 - Refresh+
 
----
-
-## 프로젝트 개요
-
-### 🎯 배경
-
-기존 신한은행 임직원용 연성소(호텔/펜션/리조트) 예약 시스템의 불편함을 개선하여, 다음을 제공합니다:
-
-- **이중 예약 시스템**: 공정한 티켓팅과 즉시 예약을 모두 지원
-  - **티켓팅 시스템**: 포인트 기반으로 매일 자정(00:00 KST) 배치 작업을 통해 최고 점수자에게 자동 배정
-  - **직접 예약**: 실시간으로 lulu-lala에 직접 예약 요청 (08:00~21:00 KST 시간 제한)
-- **자동화된 크롤링**: 기존 웹사이트에서 숙소 정보, FAQ, 실시간 신청 현황 자동 수집
-- **실시간 알림**: Firebase FCM 푸시 알림으로 예약 기회를 놓치지 않음
-- **AI 챗봇**: FAQ 기반 RAG 챗봇으로 즉시 답변
-- **모던 UI/UX**: Next.js 15 + React 19 기반 반응형 웹 인터페이스
-
-### 🌟 핵심 비즈니스 로직
-
-#### 1. 티켓팅 시스템 (공정한 배정)
-
-```
-사용자 예약 신청 → PENDING 상태
-           ↓
-매일 00:00 (KST) 배치 작업 실행
-           ↓
-PENDING 예약을 점수 순으로 정렬
-           ↓
-최고 점수자 → WON (당첨)
-기타 신청자 → LOST (탈락)
-           ↓
-WON 상태일 때만 포인트 차감
-```
-
-#### 2. 직접 예약 시스템 (실시간 예약)
-
-```
-사용자가 숙소 상세에서 날짜 선택
-           ↓
-"예약하기" 버튼 클릭
-           ↓
-시간 제한 체크 (08:00~21:00 KST)
-           ↓
-연락처 입력 & 개인정보 동의
-           ↓
-lulu-lala API로 직접 POST 요청
-           ↓
-HTTP 302 응답 → 성공
-           ↓
-즉시 WON 상태로 Booking 생성
-           ↓
-포인트 10점 차감
-```
-
-**차이점**:
-- **티켓팅**: 신청 시 PENDING → 자정에 배치 작업으로 WON/LOST 결정
-- **직접 예약**: 즉시 lulu-lala API 호출 → 성공 시 바로 WON 상태
+</aside>
 
 ---
 
-## 주요 기능
+## 2. 프로젝트 목적
 
-### 1. 자동화된 숙소 정보 크롤링
+**주요 목적: 문제 해결 + 업무 효율화 + AI 창작 실험**
 
-```
-기존 웹사이트 (lulu-lala.zzzmobile.co.kr)
-           ↓
-Playwright 기반 크롤러
-           ↓
-✓ 숙소 기본 정보 (이름, 주소, 연락처, 이미지)
-✓ 날짜별 신청 점수 및 인원
-✓ 실시간 신청 현황
-           ↓
-DB 저장 (Accommodations, AccommodationDates, TodayAccommodations)
-```
+### 기존 시스템의 한계
 
-**크롤링 배치 작업**:
-- `accommodation_crawler.py`: 전체 숙소 정보 수집 (매일 01:00 KST)
-- `faq_crawler.py`: FAQ 정보 수집 (매일 02:00 KST)
-- `today_accommodation_realtime.py`: 오늘자 실시간 신청 현황 갱신 (매시간)
+![image.png](images/image%201.png)
 
-**인증 방식**:
-- RSA 공개키로 비밀번호 암호화
-- 세션 쿠키 저장하여 재사용
-- 직접 예약 시 사용자의 session_cookies 활용
+<aside>
+😰
 
-### 2. 공정한 티켓팅 시스템
+**UX 문제**
 
-```
-[예약 신청 흐름]
-사용자가 숙소 예약 신청
-    ↓
-PENDING 상태로 DB 저장
-    ↓
-사용자의 현재 점수를 winning_score_at_time에 저장
-    ↓
-매일 00:00 (KST) daily_ticketing 배치 작업 실행
-    ↓
-각 숙소/날짜별로 PENDING 예약을 winning_score_at_time 순으로 정렬
-    ↓
-최고 점수 1명 → WON (포인트 차감)
-나머지 → LOST (포인트 그대로)
-    ↓
-WON 사용자에게 푸시 알림 발송
-```
+직관적이지 못한 검색과 레거시한 화면
 
-**특징**:
-- 선착순이 아닌 점수 기반 공정 배정
-- 포인트는 WON 상태일 때만 차감 (PENDING/LOST는 차감 안됨)
-- 배치 작업 시점의 점수가 아닌 신청 시점의 점수(`winning_score_at_time`)로 비교
+</aside>
 
-### 3. 직접 예약 시스템
+<aside>
+📉
 
-```
-[직접 예약 흐름]
-숙소 상세 페이지에서 예약 가능 날짜 선택
-    ↓
-"예약하기" 버튼 표시
-    ↓
-버튼 클릭 → 예약 모달 표시
-    ↓
-시간 제한 실시간 체크 (08:00~21:00 KST)
-    ↓
-숙박자 정보 자동 입력 (현재 로그인 사용자)
-연락처 입력 (010-XXXX-XXXX)
-개인정보 동의 체크
-    ↓
-"예약하기" 버튼 클릭
-    ↓
-Backend에서 lulu-lala API로 POST 요청
-(사용자의 session_cookies로 인증)
-    ↓
-HTTP 302 응답 확인 → 성공
-    ↓
-Booking 테이블에 WON 상태로 즉시 저장
-포인트 10점 차감
-    ↓
-성공 메시지 표시
-"예약에 성공했습니다. 해당 숙박에 대한 배정 결과는 익일 07시에 확인 가능합니다."
-```
+**정보 부족**
 
-**주요 특징**:
-- **시간 제한**: 08:00~21:00 KST만 예약 가능
-- **실시간 경고**: 20:00 이후 "예약 가능 시간이 얼마 남지 않았습니다" 표시
-- **모바일 최적화**: 연락처 입력 필드 모바일 화면에 맞게 조정
-- **즉시 반영**: 성공 시 바로 WON 상태로 저장 (PENDING 단계 없음)
-- **세션 재사용**: 로그인된 사용자의 session_cookies로 인증
+숙소 평가 지표, 예약 알림, 가성비 정보 부재
 
-**API 엔드포인트**:
-```
-POST /api/bookings/direct-reserve
-{
-  "accommodation_id": "숙소 ID",
-  "check_in_date": "2024-12-25",
-  "phone_number": "010-1234-5678"
-}
-```
+</aside>
 
-**성공 기준**:
-- lulu-lala API 응답 HTTP 302 (리다이렉트)
+<aside>
+🤷
 
-### 4. 실시간 알림 기능
+**개인화 부족**
 
-```
-Firebase Cloud Messaging (FCM)
-           ↓
-Android / iOS / Web 푸시 알림
-```
+사용자 맞춤 추천 기능 없음
 
-**알림 타입**:
-1. **예약 결과 알림**: 티켓팅 결과 (WON/LOST)
-2. **찜한 숙소 알림**: 관심 숙소가 내 점수로 예약 가능할 때
-3. **포인트 회복 알림**: 일정 시간 경과 후 포인트 회복
-4. **인기 숙소 알림**: 경쟁률 높은 숙소 남은 자리 공지
+</aside>
 
-### 5. FAQ 기반 RAG 챗봇
+<aside>
+💰
 
-```
-사용자 질문
-    │
-    ▼
-FAQ 데이터베이스 검색
-    │
-    ▼
-관련 FAQ 추출
-    │
-    ▼
-LLM으로 맥락화된 응답 생성
-    │
-    ▼
-사용자에게 표시
-```
+**운영 비용**
 
-**기능**:
-- 크롤링한 FAQ 데이터 기반 RAG
-- 예약 정책, 점수 시스템, 취소/변경 정보 자동 응답
-- 웹사이트 하단에 Chainlit 위젯으로 제공
+지속적인 외주업체 유지보수 비용 발생
 
-### 6. 찜하기 & 스마트 알림
-
-- 최대 20개 숙소 찜하기 가능
-- 찜한 숙소가 내 점수로 예약 가능해지면 푸시 알림
-- 주말/휴일 자동 필터링
-- 신청 점수 변동 시 추가 알림 옵션
+</aside>
 
 ---
 
-## 기술 스택
+## Refresh+의 해결책
 
-### Frontend
-```
-Framework:          Next.js 15 (App Router, TypeScript, React 19)
-UI Components:      Shadcn/ui (Tailwind CSS)
-State Management:   React Query (TanStack Query)
-Push Notifications: Firebase Cloud Messaging (FCM)
-Forms:              React Hook Form + Zod
-HTTP Client:        Axios
-Charts/Analytics:   Recharts
+![image.png](images/image%202.png)
+
+![image.png](images/image%203.png)
+
+### **AI 기반 통합 웹/앱 End-to-End 자체 구축 및 배포**
+
+본 프로젝트는 단순한 기능 개선을 넘어 **AI를 활용한 빠른 개발/배포 실현**이라는 의미 있는 결과를 도출했습니다. 은행이 관리하고 있는 외주개발 사이트에 대해 **내부 인력이 AI의 지원을 받아 짧은 기간 내에 자체 구축**함으로써 다음과 같은 효과를 달성했습니다:
+
+- **개발 생산성 향상:** AI 코딩 보조 도구를 활용해 **전통적 개발 기간 단축**
+- **기술 역량 강화:** 내부 개발 인력의 AI 도구 활용 경험 축적 및 역량 개발
+- **자체 커스터마이징 가능:** 향후 기능 개선 및 유지보수를 자체적으로 진행 가능한 기반 구축
+
+이를 통해 임직원은 **더 빠르고, 더 똑똑하게, 더 만족도 높은 숙소를 예약**할 수 있는 경험을 얻게 되며, 
+
+조직 차원에서는 **숙소 예약 시스템의 현대화, 사용자 만족도 증대, 그리고 AI 기반 개발 방식의 성공적 사례 창출**이라는 복합적 효과를 기대할 수 있습니다.
+
+## 3. 주요 기능
+
+**Refresh+**는 **AI 기반 데이터 분석**과 **사용자 맞춤형 추천**을 통해 임직원의 연성소 예약 경험을 혁신합니다.
+
+---
+
+### 기능 1. 요일별 숙소 예상 점수 제공
+
+<aside>
+📊
+
+과거 데이터 기반으로 **요일별 예측 당첨 점수**를 제공하여 예약 성공률을 높입니다.
+
+</aside>
+
+**핵심 가치**
+
+- 과거 요일별 연성소의 점수 정보를 기반으로 예측 당첨 점수 산출
+- 데이터 기반 의사결정으로 사용자의 예약 경험 향상
+- 언제 신청해야 당첨 확률이 높은지 한눈에 파악
+
+**작동 방식**
+
+- 실시간 신청 점수 데이터 자동 수집
+- 요일별 패턴 분석을 통한 AI 예측 알고리즘 적용
+- 사용자에게 최적의 예약 타이밍 제안
+
+![](images/image%204.png)
+
+![](images/image%205.png)
+
+---
+
+### 기능 2. SOL 점수 (숙박 효율 점수) 시스템
+
+<aside>
+🏆
+
+**가격과 점수를 종합한 가성비 지표**로 최적의 숙소를 빠르게 찾을 수 있습니다.
+
+</aside>
+
+**핵심 가치**
+
+- 네이버 호텔 최저가와 예상 점수를 알고리즘으로 결합
+- 가성비를 객관적 수치로 표현하여 의사결정 지원
+- 사용자가 최적의 숙소를 빠르게 식별 가능
+
+**계산 방식**
+
+- 숙소 최저가 데이터 자동 수집
+- 예상 신청 점수와의 균형 분석
+- SOL 점수 알고리즘으로 가성비 수치화
+
+```bash
+ 📐 계산 로직
+  1단계: 효율성 계산
+  효율성 = 온라인 최저가 ÷ (신청 점수 × 가중치)
+
+  예시:
+  - 숙소 A: 온라인 최저가 200,000원, 신청 점수 50점 (가중치 1.3)
+    - 효율성 = 200,000 ÷ (50 × 1.3) = 3,076.92
+  - 숙소 B: 온라인 최저가 150,000원, 신청 점수 95점 (가중치 0.7)
+    - 효율성 = 150,000 ÷ (95 × 0.7) = 2,256.53
+
+  2단계: 가중치 시스템
+  신청 점수에 따라 차등 가중치를 적용하여 높은 점수를 요구하는 숙소의 효율성을 보정합니다.
+
+  | 신청 점수  | 가중치  | 의미                                    |
+  |----------|------|-----------------------------------------|
+  | 90점 이상 | 0.7배 | 높은 점수 요구 → 가중치 낮춤 (SOL 점수 상승 효과) |
+  | 70~89점  | 1.0배 | 중간 범위 → 가중치 유지                      |
+  | 70점 미만 | 1.3배 | 낮은 점수 요구 → 가중치 높임 (SOL 점수 하락 효과) |
+
+  가중치 적용 이유:
+  - 90점 이상 고득점이 필요한 숙소는 진입장벽이 높지만, 온라인 최저가가 비싸면 효율적
+  - 70점 미만 저득점으로 예약 가능한 숙소는 많지만, 온라인 최저가가 저렴하면 효율성이 낮음
+
+  3단계: Min-Max 정규화
+
+  모든 숙소의 효율성 값을 0~100점 척도로 변환합니다.
+
+  SOL 점수 = ((효율성 - 최소 효율성) ÷ (최대 효율성 - 최소 효율성)) × 100
+
+  결과:
+  - SOL 점수 100점 = 전체 숙소 중 가성비 최고
+  - SOL 점수 0점 = 전체 숙소 중 가성비 최저
 ```
 
-### Backend
-```
-Framework:          FastAPI (Python 3.11+)
-ORM:                SQLAlchemy 2.0 (async)
-Database:           Turso (SQLite Edge) / PostgreSQL
-Notifications:      Firebase Admin SDK
-Crawling:           Playwright (async)
-Task Queue:         Railway Cron Jobs
-RAG Chatbot:        Chainlit + LangChain
-Vector DB:          Supabase pgvector (선택)
-Timezone:           pytz (KST 시간 처리)
-HTTP Client:        httpx (async)
+> "같은 점수라면 더 좋은 숙소를, 같은 숙소라면 더 낮은 점수로 예약하세요!"
+> 
+
+---
+
+### 기능 3. 사용자 맞춤형 숙소 추천 및 즐겨찾기
+
+<aside>
+✨
+
+**내 점수에 딱 맞는 숙소**를 자동으로 추천하고, 관심 숙소의 예약 알림을 받을 수 있습니다.
+
+</aside>
+
+**핵심 가치**
+
+- 현재 보유 점수 기반 예약 가능한 숙소 자동 필터링
+- 가고 싶은 연성소 즐겨찾기 등록
+- 맞춤형 알림 수신으로 예약 기회 놓치지 않음
+
+**맞춤형 추천 프로세스**
+
+1. 사용자의 현재 점수 확인
+2. 예약 가능성이 높은 숙소 자동 필터링
+3. SOL 점수 기반 최적 숙소 우선 추천
+
+**즐겨찾기 기능**
+
+- 관심 숙소를 즐겨찾기에 추가
+- 해당 숙소 예약 오픈 시 자동 알림
+
+![](images/eb63cc21-2bb6-4dcd-adbb-0de6928a4d51.png)
+
+![image.png](images/image%206.png)
+
+---
+
+### 기능 4. 24시간 AI 상담 챗봇
+
+<aside>
+🤖
+
+**언제든지 궁금한 점을 물어보세요.** AI 챗봇이 24시간 실시간으로 답변해드립니다.
+
+</aside>
+
+**핵심 가치**
+
+- LangChain 및 OpenAI 기반 지능형 대화 엔진
+- 예약, 취소 및 규정 관련 질문에 실시간 응답
+- 연성소 FAQ 기반 정확한 가이드 제공
+
+**기술 구성**
+
+- **RAG (검색 증강 생성)**: 연성소 FAQ 문서를 기반으로 정확한 답변
+- **자연어 처리**: 사용자 질문을 이해하고 맥락에 맞는 응답
+
+**주요 상담 영역**
+
+- 예약 방법 및 절차 안내
+- 취소/변경 규정 설명
+
+![](images/image%207.png)
+
+---
+
+### 기능 5. 숙소 상세정보 AI 요약 서비스
+
+<aside>
+⚡
+
+**긴 설명은 이제 그만!** AI가 숙소 핵심 정보를 3줄로 요약해드립니다.
+
+</aside>
+
+**핵심 가치**
+
+- 장문의 숙소 설명을 3줄 핵심 요약으로 자동 변환
+- 정보 소비 시간 대폭 단축
+- 핵심만 빠르게 파악하고 빠른 의사결정
+
+**AI 요약 프로세스**
+
+1. 숙소 상세 설명 자동 수집
+2. OpenAI GPT 모델로 핵심 정보 추출
+3. 3줄 요약 형태로 사용자에게 제공
+
+**요약 포함 내용**
+
+- 숙소의 주요 특징과 장점
+- 위치 및 접근성 정보
+- 주변 편의시설 및 추천 포인트
+
+![](images/c0ae840f-8b28-4b5a-ab83-1acb67c1f28d.png)
+
+![image.png](images/image%208.png)
+
+## 4. 사용 기술
+
+| **분야** | **기술 스택** |
+| --- | --- |
+| **프론트엔드** | Next.js 15, Shadcn (Tailwind CSS 기반), TypeScript, Vercel 배포 |
+| **백엔드** | FastAPI (Python), Railway 배포, 비즈니스 로직 서비스 계층 분리 |
+| **데이터베이스** | Turso (SQLite) |
+| **알림 시스템** | PWA (iOS/Android/Web 통합 지원) |
+| **AI 챗봇** | LangChain + Chainlit + OpenAI 모델 |
+| **웹 크롤러** | Playwright (SSO 로그인 지원, 숙소/FAQ/실시간 현황 크롤링) |
+| **인프라** | Vercel (프론트엔드), Railway (백엔드/크론 작업) |
+| **AI 생성 도구** | Claude (코드 작성 메인), Codex (검수/서브), Cursor (문서 및 단순 수정), Perplexity (자료 조사·프롬프트 엔지니어링), 나노바나나 (로고 생성), ChatGPT (자료 조사 및 검토) |
+| **LLM 모델** | OpenAI GPT 시리즈 (챗봇 및 요약 기능) |
+
+## 5. 사용자 흐름(User Flow)
+
+![Mermaid Chart - Create complex, visual diagrams with text.-2025-12-10-134844.png](images/Mermaid_Chart_-_Create_complex_visual_diagrams_with_text.-2025-12-10-134844.png)
+
+<aside>
+🔄
+
+**데이터 자동 수집** → **실시간 검색** → **AI 분석** → **즉시 추천** → **예약 알림**까지 전 과정을 자동으로 처리하는 AI 기반 통합 숙소 추천 플랫폼
+
+</aside>
+
+---
+
+### 0단계. 숙소 데이터 자동 수집 (매일 상시 갱신)
+
+<aside>
+📊
+
+서비스의 모든 추천은 **자동 수집된 실시간 데이터**를 기반으로 합니다.
+
+</aside>
+
+**자동 수집 프로세스**
+
+- 매일 **08시~21시** 사이 **20분 간격** 반복 배치를 통해 숙소 정보 자동 수집
+
+**수집 항목**
+
+- 숙소 상세 정보
+- 날짜별 실시간 신청 점수
+- 숙소 최저가
+
+**기술 스택**
+
+- **수집 방식**: Playwright 기반 파이썬 크롤링
+- **데이터 출처**: 네이버 호텔 + 신한은행 연성소 사이트
+
+> **사람이 직접 갱신하지 않아도, 모든 숙소 정보는 자동으로 최신화됩니다.**
+> 
+
+---
+
+### 1단계. 사용자가 숙소 검색
+
+<aside>
+👤
+
+사용자는 Refresh+ 검색 화면에서 **원하는 날짜와 숙소를 검색**합니다.
+
+</aside>
+
+**검색 예시**
+
+> "2026년 1월 10일(토) / 포시즌스 호텔"
+> 
+
+**프론트엔드 환경**
+
+- **배포 플랫폼**: Vercel (AWS, 싱가포르 리전)
+
+---
+
+### 2단계. 검색 요청이 백엔드로 전달
+
+<aside>
+🚀
+
+사용자의 검색 요청은 **즉시 서버로 전달됩니다.**
+
+</aside>
+
+**백엔드 환경**
+
+- **배포 플랫폼**: Railway (AWS, 싱가포르 리전)
+- **프레임워크**: FastAPI
+
+---
+
+### 3단계. 실시간 데이터 조회
+
+<aside>
+🔎
+
+백엔드는 DB에서 **해당 날짜의 실제 예약 데이터**를 조회합니다.
+
+</aside>
+
+**조회 항목**
+
+- 해당 날짜의 네이버 호텔 **최저가**
+- **실시간 신청 점수**
+- **현재 신청 인원**
+
+**데이터베이스**
+
+- Turso (SQLite, 일본 리전)
+
+> 단순 검색이 아니라 **"실제 예약 가능성과 경쟁률"까지 동시에 분석**합니다.
+> 
+
+---
+
+### 4단계. AI 분석 및 점수 생성
+
+<aside>
+🤖
+
+조회된 데이터를 기반으로 **AI 기반 자동 분석을 수행합니다.**
+
+</aside>
+
+**AI 분석 내용**
+
+- 해당 날짜·요일 기반 **예측 신청 점수 계산**
+- 숙소의 **SOL 점수(가격 대비 효율 점수)** 산출
+- OpenAI 기반 AI가 **숙소 핵심 정보 3줄 요약 자동 생성**
+
+> 사용자는 **가격·경쟁률·추천 이유를 한 번에 확인**할 수 있습니다.
+> 
+
+---
+
+### 5단계. 분석 결과 프론트엔드로 전달
+
+<aside>
+↩️
+
+데이터 조회 + AI 분석이 모두 완료된 결과가 **다시 사용자 화면으로 전달됩니다.**
+
+</aside>
+
+---
+
+### 6단계. 사용자 화면에 실시간 추천 표시
+
+<aside>
+✅
+
+사용자는 실제 화면에서 다음 정보를 **즉시 확인**합니다.
+
+</aside>
+
+**화면 표시 정보**
+
+- 2026년 1월 10일(토) 포시즌스 **상세 정보**
+- **실시간 신청 점수**
+- **AI 3줄 요약**
+- **예측 점수 기반 추천 여부**
+
+> **"언제, 어디가, 왜 좋은지"를 한 번에 이해할 수 있는 구조입니다.**
+> 
+
+---
+
+### 7단계. 예약 알림 자동 발송
+
+<aside>
+⏰
+
+사용자가 원하는 날짜에 **알림을 설정하면**, 해당 숙소 예약이 오픈되는 날짜에 맞춰 **푸시 알림이 자동 발송**됩니다.
+
+</aside>
+
+---
+
+### 🏗️ 서비스 구성 특징
+
+<aside>
+🔧
+
+**Vercel + Railway + Turso 분리**
+프론트엔드와 백엔드, DB 모두를 독립적으로 관리하여 최적으로 운영
+
+</aside>
+
+<aside>
+☁️
+
+**클라우드 기반**
+어디서든 안정적으로 접근 가능하고, 유지 보수가 쉬움
+
+</aside>
+
+<aside>
+🤖
+
+**AI 맞춤형 서비스**
+OpenAI를 통해 사용자 맞춤형 기능들(추천, 요약, 챗봇) 제공
+
+</aside>
+
+<aside>
+⚙️
+
+**자동화**
+Playwright 크롤러로 매일 숙소 정보 및 숙소 가격 갱신
+
+</aside>
+
+![image.png](images/image%209.png)
+
+![image.png](images/image%2010.png)
+
+## 6. AI 활용 내역
+
+본 프로젝트는 AI를 단순한 보조 도구가 아닌 **핵심 개발 엔진**으로 활용하여 짧은 기간에 실제로 동작하는 복잡한 기능들을 구현했습니다. 다음은 각 단계별 AI 활용 상황입니다.
+
+## 1. LLM 어시스턴트를 통한 연구 및 전략 수립
+
+### Perplexity - 자료조사, 프롬프트 엔지니어링, 연구 담당
+
+- 프로젝트 초반 숙소 예약 시스템의 시스템 구조 및 기반 코드 제공
+
+![image.png](images/ed5b7343-22a0-4772-ba92-f62a7c90b3b0.png)
+
+![image.png](images/image%2011.png)
+
+<aside>
+🚊
+
+- 필요한 기능들에 대해 **각 단계별로 구현**할 수 있도록 **기능에 대한 설명 제공**
+- 사용하고자 하는 기술 스택은 **미리 머리속에 구상 후 프로젝트 전반 설계** 요청
+</aside>
+
+- 공식 문서들을 참조한 **프롬프트 엔지니어링** 전략 수립
+
+![image.png](images/image%2012.png)
+
+```bash
+# Identity (역할)
+You are a Python backend engineer specializing in data pipeline and batch processing systems.
+
+# Instructions (지침)
+Modify the `today_accommodation_realtime.py` crawler to implement the following logic:
+
+## Data Loading Rules
+- Load only accommodation data that opened on the current batch execution date
+- Insert data into `today_accommodation_info` SQLite database
+
+## Data Cleanup Logic  
+- Before inserting new data, check all existing rows in the database
+- Compare the date portion of `updated_at` column with current batch execution date
+- Delete all rows where `updated_at` date does not match today's date
+- This ensures the table contains only fresh data loaded on the current day
+
+## Batch Schedule
+- This batch runs repeatedly between 08:00 and 21:00 daily
+- Each execution should perform cleanup first, then load new data
+
+# Context (컨텍스트)
+<current_code>
+# Paste your existing today_accommodation_realtime.py code here if needed
+</current_code>
+
+<database_schema>
+Table: today_accommodation_info
+- Relevant columns include updated_at (datetime/timestamp)
+- Database type: SQLite
+</database_schema>
+
 ```
 
-### Infrastructure
+- 그 외 다양한 아이디어 검증, 연구 조사 및 알고리즘 확인 진행
+
+<aside>
+🛖
+
+해당 Refresh+를 위한 Perplexity ‘공간’을 만들어, 본 프로젝트의 내용을 연속성있게 질문하고 검증할 수 있었음
+
+![image.png](images/image%2013.png)
+
+</aside>
+
+### ChatGPT - 빠른 확인 및 문제해결
+
+**역할**
+
+- 개발 중 발생하는 오류 로그 분석 및 빠른 해결
+- 배포 과정에서 발생한 오류 로그에 대한 분석 진행
+
+![image.png](images/image%2014.png)
+
+![image.png](images/image%2015.png)
+
+- 시연 영상을 위한 스크립트 및 스토리보드 작성
+
+![image.png](images/image%2016.png)
+
+![image.png](images/image%2017.png)
+
+---
+
+## 2. AI 코딩 에이전트를 통한 개발 구현
+
+<aside>
+💼
+
+- UI/UX 관점에서 사용자 동선과 화면 목적을 먼저 정의한 뒤 구현을 요청
+- 프론트 구현 시 연동할 백엔드 API와 데이터 구조를 함께 명시
+- 기존 로직은 재사용하고 실제 서비스의 동작에 대해 자동화된 테스트 진행 요청
+</aside>
+
+![개발화면.png](images/a971a344-e6f8-4ef1-94d5-7a01de126bbc.png)
+
+### Claude Code - 메인 개발 담당 (복잡한 로직 구현)
+
+**역할**
+
+- 프로젝트의 가장 복잡한 비즈니스 로직 구현
+- FastAPI 백엔드 핵심 기능 개발 (추천 알고리즘, 숙소 예약 등등)
+- AI 기반 챗봇 및 요약 서비스 구축
+
+**개발 프로세스 (Plan Mode 활용)**
+
+<aside>
+💡
+
+Plan Mode는 요청한 작업에 대해 복잡한 로직을 먼저 계획 및 문서화한 이후, 사용자와 함게 확인한 뒤에 개발을 진행합니다.
+
+[1210.mov](images/1210.mov)
+
+</aside>
+
+**1. 전략 수립 단계 (Plan Mode)**
+   - 백엔드 배포를 고려했을 때, 해당 알림 기능들에 대한 DB 및 서비스 설계를 어떻게 할까?
+   - Claude가 알고리즘 설계, 데이터 구조, 처리 흐름을 상세한 문서로 제시
+   - 개발 팀과 함께 검토 및 검증
+   - 수정 및 최적화 진행
+
+**2. 구현 단계 (Code Generation)**
+   - 검증된 계획을 바탕으로 실제 Python 코드 생성
+   - 타입 힌트, 에러 처리, 로깅 포함
+   - 구현 이후 실제로 동작하는 지에 대한 테스트 자동화 진행 (MCP 서버 이용)
+
+<aside>
+💡
+
+**사용한 MCP 서버 목록**
+
+- **context7**: 최신 기술 문서와 공식 레퍼런스를 자동으로 검색해 정확한 개발 정보를 제공
+- **playwright**: 웹 브라우저 자동 제어를 통해 로그인, 데이터 수집, 화면 테스트를 수행
+- **sequential-thinking**: 복잡한 문제를 단계별로 구조화해 논리적인 추론 과정을 수행하는 사고 모델
+- **notionApi**: 기획 문서, 데이터베이스, 작업 상태를 Notion과 실시간으로 연동
+</aside>
+
+---
+
+### Codex - 서브 개발 담당 (코드 검증)
+
+![image.png](images/image%2018.png)
+
+**역할**
+- 작성된 코드의 품질 검증
+- 성능 최적화 제안, 보안 취약점 검토
+- 공식 프롬프트 엔지니어링 문서 기반 개발 진행
+
+**특징**
+Codex는 OpenAI가 제공한 공식 프롬프트 엔지니어링 문서를 따라 체계적으로 검증합니다.
+- 코드 가독성 및 구조 평가
+- 에러 처리의 적절성 확인
+- 성능 병목 지점 식별
+- 대안 제시 및 최적화 방안 제안
+
+---
+
+### Cursor - 문서 자료 작성 및 빠른 수정
+
+![image.png](images/image%2019.png)
+
+**역할**
+- Notion 문서 작성 및 정리
+- Github 커밋 메시지 자동 생성
+- 단순 오류 수정 (자동 Tab 기능) 및 버그 패치
+- 문서화 작업
+
+```bash
+# Refresh+ 개발 일지 - 2024년 12월 7일 (토요일)
+
+## 📅 개발 일자
+**2024년 12월 7일 (토요일)**
+
+---
+
+## 🎯 이번 주 개발 목표
+
+이번 주는 **인증 시스템 완전 구현**과 **사용자 경험 개선**에 집중했습니다.
+
+---
+
+## ✅ 완료된 작업
+
+### 1. 🔐 로그인 인증 시스템 구현
+
+#### 1.1 백엔드 인증 시스템
+
+**구현된 기능:**
+- **JWT 기반 인증**: Access Token + Refresh Token 구조
+- **룰루랄라 계정 통합 로그인**: Playwright를 사용한 실제 웹사이트 로그인
+- **암호화된 비밀번호 저장**: Fernet 대칭키 암호화 (AES-128)
+- **세션 관리**: 세션 쿠키 기반 인증 지원
+- **계정 보안**: 
+  - 5회 실패 시 30분 계정 잠금
+  - 실패 시도 추적 및 IP 주소 기록
+  - 토큰 만료 시간 관리 (Access: 1시간, Refresh: 7일)
+
+**새로 생성된 파일:**
+- `backend/app/routes/auth.py` - 인증 API 엔드포인트
+- `backend/app/schemas/auth.py` - 인증 관련 Pydantic 스키마
+- `backend/app/services/auth_service.py` - 인증 비즈니스 로직
+- `backend/app/services/lulu_lala_session_manager.py` - 룰루랄라 세션 관리
+- `backend/app/utils/encryption.py` - 비밀번호 암호화 유틸리티
+- `backend/app/utils/jwt.py` - JWT 토큰 생성/검증 유틸리티
 ```
-Frontend Hosting:   Vercel
-Backend Hosting:    Railway
-Database:           Turso (SQLite) / Railway PostgreSQL
-File Storage:       Vercel Blob
-Monitoring:         Sentry
-Logging:            Railway Logs
-CI/CD:              GitHub Actions + Vercel + Railway
+
+## 3. Document AI를 통한 임직원 경험 개선
+
+### 연성소 FAQ 기반 RAG (검색증강) 챗봇
+
+**기술구성:**
+- **LangChain**: 검색증강 생성(RAG) 파이프라인 구축
+- **Chainlit**: 사용자 친화적 챗봇 인터페이스 제공
+- OpenAI 모델: 자연스러운 응답 생성
+
+> *현재 AI 챗봇 및 숙소 정보 요약을 위해 GPT-4o mini 모델을 사용중입니다.*
+> 
+
+![image.png](images/image%2020.png)
+
+![image.png](images/image%2021.png)
+
+```bash
+system_prompt = """당신은 신한은행 임직원을 위한 Refresh Plus 연성소 예약 플랫폼의 고객 지원 챗봇입니다.
+아래 참고 자료를 바탕으로 사용자의 질문에 친절하고 정확하게 답변해주세요.
+
+참고 자료:
+{context}
+
+답변 시 주의사항:
+1. 참고 자료에 있는 정보를 우선적으로 사용하세요
+2. 참고 자료에 없는 내용은 "죄송하지만 해당 정보를 찾을 수 없습니다"라고 안내하세요
+3. 친절하고 공손한 어투로 답변하세요
+4. 필요시 참고 자료의 번호를 인용하세요 (예: [참고 1]에 따르면...)
+"""
 ```
 
 ---
 
-## 프로젝트 구조
+## 4. 이미지 및 영상 AI 활용
 
-### 고수준 구조
-```
-refresh-plus/
-├── frontend/          # Next.js 15 + React 19 (TypeScript)
-├── backend/           # FastAPI + Python
-└── docs/              # 문서
-```
+### Refresh+ 로고 및 아이콘 - 구글 나노바나나 활용
 
-### Backend 구조
-```
-backend/
-├── app/
-│   ├── main.py              # FastAPI 앱 초기화
-│   ├── config.py            # 환경 설정
-│   ├── database.py          # DB 연결 (async)
-│   ├── dependencies.py      # 의존성 주입 (JWT 인증 등)
-│   │
-│   ├── models/              # SQLAlchemy ORM 모델
-│   │   ├── user.py
-│   │   ├── accommodation.py
-│   │   ├── accommodation_date.py
-│   │   ├── today_accommodation.py
-│   │   ├── booking.py
-│   │   ├── wishlist.py
-│   │   └── faq.py
-│   │
-│   ├── schemas/             # Pydantic 스키마 (요청/응답 검증)
-│   │   ├── booking.py       # DirectReservationCreate, DirectReservationResponse 포함
-│   │   └── ...
-│   │
-│   ├── routes/              # API 엔드포인트
-│   │   ├── bookings.py      # POST /direct-reserve 포함
-│   │   └── ...
-│   │
-│   ├── services/            # 비즈니스 로직
-│   │   ├── booking_service.py  # create_direct_reservation() 포함
-│   │   └── ...
-│   │
-│   ├── batch/               # 배치 작업 (Railway Cron)
-│   │   ├── daily_ticketing.py               # 매일 00:00 티켓팅
-│   │   ├── accommodation_crawler.py         # 숙소 정보 크롤링
-│   │   ├── faq_crawler.py                   # FAQ 크롤링
-│   │   └── today_accommodation_realtime.py  # 실시간 현황 갱신
-│   │
-│   ├── integrations/        # 외부 서비스 통합
-│   │   └── firebase_service.py  # FCM 푸시 알림
-│   │
-│   └── utils/               # 헬퍼 함수
-│       ├── logger.py
-│       ├── time_utils.py    # KST 시간 제한 체크
-│       └── phone_utils.py   # 전화번호 파싱
-│
-└── batch/                   # Railway Cron 실행 스크립트
-    ├── run_daily_ticketing.py
-    ├── run_accommodation_crawler.py
-    ├── run_faq_crawler.py
-    └── run_today_accommodation_realtime.py
-```
+![sol.webp](images/sol.webp)
 
-### Frontend 구조
-```
-frontend/src/
-├── app/              # Next.js 15 App Router
-│   ├── (auth)/       # 인증 라우트
-│   ├── (protected)/  # 보호된 라우트
-│   │   ├── accommodations/[id]/page.tsx  # 숙소 상세 (직접 예약 포함)
-│   │   ├── bookings/
-│   │   └── wishlist/
-│   └── api/          # API 라우트 (웹훅)
-│
-├── components/       # React 컴포넌트
-│   ├── layout/
-│   ├── accommodation/
-│   │   ├── DirectReservationModal.tsx  # 직접 예약 모달
-│   │   └── ...
-│   ├── booking/
-│   └── ui/           # Shadcn/ui 컴포넌트
-│
-├── lib/              # 유틸리티 함수
-│   ├── api.ts        # API 클라이언트 (createDirectReservation 포함)
-│   ├── firebase.ts   # Firebase 설정
-│   └── utils.ts
-│
-├── hooks/            # 커스텀 React 훅
-│   ├── useAccommodations.ts
-│   ├── useBookings.ts
-│   └── useWishlist.ts
-│
-└── types/            # TypeScript 타입
-    ├── booking.ts    # DirectReservationCreate, DirectReservationResponse 포함
-    └── ...
-```
+![Gemini_Generated_Image_9la12p9la12p9la1.png](images/Gemini_Generated_Image_9la12p9la12p9la1.png)
 
----
+![refresh_plus_app_logo.png](images/refresh_plus_app_logo.png)
 
-## 설치 및 실행
+<aside>
+💡
 
-### 필수 요구사항
-- Node.js 18+
-- Python 3.11+
-- Git
-- Railway CLI (배포용)
+Using the uploaded character image, create an app logo where this character stands on the left side next to "Refresh+" text. Keep the character's original design and colors. The "Refresh" text uses ocean blue gradient (deep cerulean #006994 to fresh turquoise #40E0D0). The superscript "+" is in sparkling coral orange (#FF7F50) with a glowing effect. Clean white or transparent background. Horizontal layout, balanced composition, modern and professional style.
 
-### Backend 설치
+</aside>
 
-#### 1. 저장소 클론
-```bash
-git clone https://github.com/your-org/refresh-plus.git
-cd refresh-plus/backend
-```
+### Refresh+ 시연 영상 - OpenAI Sora (영상) + Suno (음악)
 
-#### 2. 가상 환경 생성
-```bash
-python -m venv venv
+[https://youtu.be/I9QO4UWyW5E?si=zlVasajdozVaA9pu](https://youtu.be/I9QO4UWyW5E?si=zlVasajdozVaA9pu)
 
-# macOS/Linux
-source venv/bin/activate
+<aside>
+🖥️
 
-# Windows
-venv\Scripts\activate
-```
+Style: Cinematic commercial, realistic, emotional contrast, smooth transitions
+Aspect Ratio: 9:16 (모바일 광고 최적화)
+Lighting: 초반은 차가운 사무실 조명 → 후반은 따뜻한 자연광
+Music: 초반 긴장감 있는 리듬 → 앱 실행 후 밝고 설레는 여행 음악
 
-#### 3. 의존성 설치
-```bash
-pip install -r requirements.txt
-```
+✅ 장면 1: 바쁜 은행원 사무실 (도입부 – 현실의 피로)
 
-#### 4. 환경 변수 설정
-```bash
-cp .env.example .env
-# .env 파일 편집
-```
+A realistic office environment inside a modern bank.
+The main character is a tired bank clerk, overwhelmed with paperwork, phone calls ringing, coworkers rushing past.
+His face shows exhaustion, stress, and emotional burnout.
+Cold blue-toned lighting emphasizes fatigue.
+Fast-paced motion, slight camera shake to show chaos.
 
-**필수 환경 변수**:
-```env
-# 데이터베이스
-DATABASE_URL=sqlite+aiosqlite:///./refresh_plus.db
+✅ 장면 2: 아이폰으로 앱 실행 (전환 포인트 – 절대 화면 가리지 않기)
 
-# Firebase (푸시 알림)
-FIREBASE_CREDENTIALS_PATH=./firebase-credentials.json
-FIREBASE_PROJECT_ID=your_project_id
+The character sits down briefly, sighs deeply, and takes out an iPhone.
+He opens the Refresh+ app.
 
-# 크롤링 (lulu-lala 로그인 정보)
-LULU_LALA_USERNAME=your_username
-LULU_LALA_PASSWORD=your_password
-LULU_LALA_RSA_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
+⚠ Critical instruction:
+The character’s hand must NOT block or cover the smartphone screen at any moment.
+The app UI must be clearly visible to the viewer at all times.
 
-# CORS
-CORS_ORIGINS=["http://localhost:3000"]
+The screen glows warmly as the app launches.
+The character’s expression changes from tired → curious → hopeful.
+Soft sound effect signals the transition.
 
-# 앱 설정
-MAX_WISHLIST_ITEMS=20
-POINTS_PER_BOOKING=10
-POINTS_RECOVERY_HOURS=24
-MAX_POINTS=100
-```
+✅ 장면 3: 행복한 여행 – 전주 한옥마을 (힐링 시작)
 
-#### 5. 데이터베이스 마이그레이션
-```bash
-alembic upgrade head
-```
+Seamless cinematic transition from the phone screen into reality.
+The character is now walking through Jeonju Hanok Village, wearing casual clothes, smiling naturally.
 
-#### 6. 서버 실행
-```bash
-# 개발 모드
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+Traditional Korean houses
 
-# API 문서: http://localhost:8000/docs
-```
+Warm sunset lighting
 
-### Frontend 설치
+Street food stalls
 
-#### 1. 프론트엔드 디렉토리로 이동
-```bash
-cd ../frontend
-```
+Relaxed walking, light laughter
 
-#### 2. 의존성 설치
-```bash
-npm install
-```
+Emotional release from work stress
 
-#### 3. 환경 변수 설정
-```bash
-cp .env.local.example .env.local
-# .env.local 파일 편집
-```
+The camera follows smoothly from behind, steady and peaceful.
 
-**필수 환경 변수**:
-```env
-# Firebase (FCM)
-NEXT_PUBLIC_FIREBASE_API_KEY=your_api_key
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_domain
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
-NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_bucket
-NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
-NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id
+✅ 장면 4: 서울 고급 호텔 (완벽한 마무리 – 성공적인 힐링)
 
-# Backend API
-NEXT_PUBLIC_API_URL=http://localhost:8000
-```
+Cut to a luxury hotel in Seoul at night.
+The character enters a high-end hotel lobby with grand lighting and glass architecture.
 
-#### 4. 개발 서버 실행
-```bash
-npm run dev
-# 브라우저: http://localhost:3000
-```
+Check-in scene
+
+Wide city skyline through large window
+
+Sitting by the window with a relaxed smile
+
+Holding a drink, enjoying the night view
+
+Mood is calm, elegant, and deeply satisfying.
+
+✅ 엔딩 연출 (브랜드 메시지)
+
+Final shot:
+The character looks at the city skyline peacefully.
+Fade to black with text:
+
+“From burnout to balance.”
+“Your moment of rest starts with Refresh+.”
+
+</aside>
+
+<aside>
+🎵
+
+transitions into an upbeat, and a walking bassline, layers of cheerful handclaps and subtle scatting fill the track, evoking the carefree joy of a sunny picnic day, instrumental only, starts with powerful, percussive drums that dominate the intro for 10 seconds, jazzy swing feel with bright horns, playful piano riffs, jazzy
+
+</aside>
+
+### Notion AI
+
+> 위의 기획서가 보다 발표 시 보다 한 눈에 알아보기 쉽게 Notion AI의 도움을 받았습니다.
+> 
 
 ---
 
-## 배포 가이드
+### 결론
 
-### Backend 배포 (Railway)
+- 기존 레거시 시스템에 대하여, 신규 구축에 대한 개발속도 대폭 감소
 
-#### 1. Railway CLI 설치
-```bash
-npm i -g @railway/cli
-```
+![image.png](images/image%2022.png)
 
-#### 2. Railway 로그인 및 초기화
-```bash
-railway login
-railway init
-```
+<aside>
+💡
 
-#### 3. 환경 변수 설정
-Railway 대시보드에서 다음 환경 변수 추가:
-- `DATABASE_URL`
-- `FIREBASE_CREDENTIALS_BASE64` (Base64 인코딩된 Firebase 인증 정보)
-- `LULU_LALA_USERNAME`
-- `LULU_LALA_PASSWORD`
-- `LULU_LALA_RSA_PUBLIC_KEY`
-- `CORS_ORIGINS`
+**Perplexity의 분석 결과**에 따르면, **Refresh+는 4-6개월 외부 업체가 개발할 양**으로 예상.
 
-#### 4. 배포
-```bash
-cd backend
-railway up
-```
+그러나 여러 AI 툴 및 클라우드 기반 서비스 (백엔드, 프론트, DB)이 있어 개발/배포 효율 대폭 상승 체감
 
-#### 5. Cron 작업 설정
+</aside>
 
-Railway에서 별도 서비스로 각 배치 작업 추가:
+- 하나가 아닌, 다양한 AI 툴을 서로 “경쟁”시키며 사용하면 품질을 보증하며 좋은 결과를 얻을 수 있었음
+    
+    > 특히, 코딩 AI 어시스턴트가 해매고 있는 경우, 다른 AI 어시스턴트에게 도움을 요청하면 한번에 해결하는 경우가 다수 있었음.
+    > 
+- 이제는 AI를 단순한 도구로 사용하는 것 뿐만 아니라, **실제 핵심 개발 엔진**으로 사용할 수 있을 것으로 기대
 
-**1) Daily Ticketing (매일 00:00 KST = 15:00 UTC)**
-```
-Service: Daily Ticketing
-Schedule: 0 15 * * *
-Command: python batch/run_daily_ticketing.py
-```
-
-**2) Accommodation Crawler (매일 01:00 KST = 16:00 UTC)**
-```
-Service: Accommodation Crawler
-Schedule: 0 16 * * *
-Command: python batch/run_accommodation_crawler.py
-```
-
-**3) FAQ Crawler (매일 02:00 KST = 17:00 UTC)**
-```
-Service: FAQ Crawler
-Schedule: 0 17 * * *
-Command: python batch/run_faq_crawler.py
-```
-
-**4) Today Accommodation Realtime (매시간)**
-```
-Service: Today Accommodation Realtime
-Schedule: 0 * * * *
-Command: python batch/run_today_accommodation_realtime.py
-```
-
-### Frontend 배포 (Vercel)
-
-#### 1. Vercel CLI 설치
-```bash
-npm i -g vercel
-```
-
-#### 2. 배포
-```bash
-cd frontend
-vercel
-```
-
-#### 3. 환경 변수 설정
-Vercel 대시보드에서 환경 변수 추가 (`.env.local`과 동일)
-
-#### 4. 자동 배포 설정
-- GitHub 연결
-- `main` 브랜치 push 시 자동 배포
-- PR 생성 시 미리보기 배포
-
----
-
-## 개발 가이드
-
-### API 개발
-
-#### 새로운 기능 추가 시
-
-1. **모델 생성**: `backend/app/models/feature.py`
-2. **스키마 생성**: `backend/app/schemas/feature.py` (Pydantic)
-3. **서비스 로직**: `backend/app/services/feature_service.py`
-4. **라우트 생성**: `backend/app/routes/feature.py`
-5. **라우터 등록**: `backend/app/main.py`에서 `app.include_router()` 호출
-
-#### 배치 작업 추가 시
-
-1. **배치 작업 함수**: `backend/app/batch/new_job.py`
-2. **실행 스크립트**: `backend/batch/run_new_job.py`
-3. **Railway 설정**: `backend/batch/railway_new_job.json`
-4. **Railway Cron 서비스 추가**
-
-### Frontend 개발
-
-#### 새로운 페이지 추가 시
-
-1. **타입 정의**: `frontend/src/types/feature.ts`
-2. **API 함수**: `frontend/src/lib/api.ts`
-3. **커스텀 훅**: `frontend/src/hooks/useFeature.ts`
-4. **컴포넌트**: `frontend/src/components/feature/`
-5. **페이지**: `frontend/src/app/(protected)/feature/page.tsx`
-
-### 테스트
-
-#### Backend
-```bash
-# 모든 테스트 실행
-pytest
-
-# 커버리지 리포트
-pytest --cov=app
-
-# 특정 테스트
-pytest tests/test_bookings.py -v
-```
-
-#### Frontend
-```bash
-# 유닛 테스트
-npm run test
-
-# E2E 테스트
-npm run test:e2e
-```
-
----
-
-## 환경 설정
-
-### Backend 환경 변수
-
-| 변수명 | 설명 | 필수 |
-|-------|------|-----|
-| `DATABASE_URL` | 데이터베이스 연결 문자열 | ✅ |
-| `FIREBASE_CREDENTIALS_PATH` | Firebase 인증 파일 경로 | ✅ |
-| `LULU_LALA_USERNAME` | 크롤링 로그인 사용자명 | ✅ |
-| `LULU_LALA_PASSWORD` | 크롤링 로그인 비밀번호 | ✅ |
-| `LULU_LALA_RSA_PUBLIC_KEY` | 로그인 암호화 공개키 | ✅ |
-| `CORS_ORIGINS` | 허용된 CORS 오리진 (JSON 배열) | ✅ |
-| `MAX_WISHLIST_ITEMS` | 최대 찜하기 개수 | ❌ |
-| `POINTS_PER_BOOKING` | 예약당 차감 포인트 | ❌ |
-| `POINTS_RECOVERY_HOURS` | 포인트 회복 주기 (시간) | ❌ |
-| `MAX_POINTS` | 최대 포인트 | ❌ |
-
-### Frontend 환경 변수
-
-| 변수명 | 설명 | 필수 |
-|-------|------|-----|
-| `NEXT_PUBLIC_API_URL` | Backend API URL | ✅ |
-| `NEXT_PUBLIC_FIREBASE_*` | Firebase 설정 | ✅ |
-
----
-
-## 문제 해결
-
-### Backend 실행 오류
-
-```bash
-# 1. 가상 환경 활성화 확인
-source venv/bin/activate
-
-# 2. 의존성 재설치
-pip install -r requirements.txt
-
-# 3. DB 마이그레이션 확인
-alembic upgrade head
-
-# 4. 환경 변수 확인
-cat .env | grep DATABASE_URL
-```
-
-### Frontend 실행 오류
-
-```bash
-# 1. node_modules 재설치
-rm -rf node_modules package-lock.json
-npm install
-
-# 2. 캐시 삭제
-rm -rf .next
-
-# 3. 환경 변수 확인
-cat .env.local
-```
-
-### 크롤링 실패
-
-1. `LULU_LALA_USERNAME`, `LULU_LALA_PASSWORD` 확인
-2. `LULU_LALA_RSA_PUBLIC_KEY` 형식 확인 (`\n` 문자 포함)
-3. Playwright 브라우저 설치: `playwright install chromium`
-4. 로그 확인: Railway 대시보드 → Logs
-
-### 직접 예약 실패
-
-1. **시간 제한 확인**: 08:00~21:00 KST만 예약 가능
-2. **세션 쿠키 확인**: 사용자가 로그인되어 있고 session_cookies가 유효한지 확인
-3. **HTTP 302 응답 확인**: lulu-lala API가 302 리다이렉트를 반환하는지 확인
-4. **포인트 충분 여부**: 사용자 포인트가 10점 이상인지 확인
-5. **중복 예약 확인**: 동일 날짜에 이미 WON 상태 예약이 있는지 확인
-
----
-
-## 주요 API 엔드포인트
-
-### 티켓팅 예약
-```
-POST /api/bookings
-{
-  "accommodation_id": "string",
-  "check_in": "datetime",
-  "check_out": "datetime",
-  "guests": 2
-}
-```
-
-### 직접 예약
-```
-POST /api/bookings/direct-reserve
-{
-  "accommodation_id": "string",
-  "check_in_date": "2024-12-25",
-  "phone_number": "010-1234-5678"
-}
-```
-
-### 예약 내역 조회
-```
-GET /api/bookings?status=WON
-```
-
-### 찜하기 추가
-```
-POST /api/wishlist
-{
-  "accommodation_id": "string",
-  "desired_date": "2024-12-25",
-  "notify_enabled": true
-}
-```
-
----
-
-## 라이선스
-
-MIT License
-
----
-
-## 연락처
-
-- 📧 이메일: dev@refresh-plus.com
-- 🐛 이슈: [GitHub Issues](https://github.com/your-org/refresh-plus/issues)
-
----
-
-**마지막 업데이트**: 2024년 12월
-**버전**: 1.0.0 (Beta)
+![refresh_plus_app_logo (1).png](images/refresh_plus_app_logo_(1).png)
